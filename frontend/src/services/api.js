@@ -118,4 +118,131 @@ export const cameraService = {
   }
 };
 
+// export const cameraService = {
+//   getAllCameraConfigs: async () => {
+//       const response = await api.get('/camera/configs/');
+//       return response.data;
+//     },
+
+//   testConnection: async (data) => {
+//     // First try a simple test endpoint that's lightweight
+//     try {
+//       // Try the test endpoint first (if available)
+//       await axios.get(`http://${data.ip_address}/test`, { timeout: 5000 });
+//       console.log("Preliminary connection test successful");
+//     } catch (error) {
+//       console.log("Preliminary test failed, continuing with main test");
+//       // Continue anyway - the ESP32 might not have the test endpoint
+//     }
+    
+//     // Then do the actual connection test
+//     try {
+//       const response = await retryableRequest(
+//         () => cameraAxios.post('/api/camera/test-connection', data)
+//       );
+//       return response.data;
+//     } catch (error) {
+//       console.error("Connection test failed:", error);
+//       throw error;
+//     }
+//   },
+  
+//   // Register a face
+//   registerFace: async (data) => {
+//     try {
+//       const response = await retryableRequest(
+//         () => cameraAxios.post('/api/camera/register-face', data)
+//       );
+//       return response.data;
+//     } catch (error) {
+//       console.error("Face registration failed:", error);
+//       throw error;
+//     }
+//   },
+  
+//   // Recognize a face
+//   recognizeFace: async (data) => {
+//     try {
+//       // For ESP32 mode, implement progressive timeout strategy
+//       if (data.camera_mode === 'ESP32') {
+//         // Clear any stream connection first by making a test request
+//         try {
+//           await fetch(`http://${data.esp32_ip}/test`, { 
+//             method: 'GET',
+//             mode: 'no-cors',
+//             cache: 'no-cache',
+//             headers: {
+//               'Cache-Control': 'no-cache',
+//               'Pragma': 'no-cache'
+//             },
+//             timeout: 1000
+//           });
+//         } catch (e) {
+//           // Ignore errors on warm-up
+//           console.log("Warm-up request completed");
+//         }
+        
+//         // Short delay to let connections reset
+//         await new Promise(resolve => setTimeout(resolve, 300));
+//       }
+      
+//       // Main recognition request with retries
+//       const response = await retryableRequest(
+//         () => cameraAxios.post('/api/camera/recognize-face', data)
+//       );
+//       return response.data;
+//     } catch (error) {
+//       // Custom error handling for common issues
+//       if (error.code === 'ECONNABORTED') {
+//         return {
+//           success: false,
+//           message: 'Request timed out. The camera may be busy. Please try again.'
+//         };
+//       }
+      
+//       console.error("Face recognition failed:", error);
+//       throw error;
+//     }
+//   },
+  
+//   // Train the face recognition model
+//   trainModel: async () => {
+//     try {
+//       const response = await retryableRequest(
+//         () => cameraAxios.post('/api/camera/train-model')
+//       );
+//       return response.data;
+//     } catch (error) {
+//       console.error("Model training failed:", error);
+//       throw error;
+//     }
+//   }
+// };
+
+// const cameraAxios = axios.create({
+//   timeout: 15000 
+// });
+
+// const retryableRequest = async (request, maxRetries = 3) => {
+//   let retries = 0;
+  
+//   while (retries < maxRetries) {
+//     try {
+//       return await request();
+//     } catch (error) {
+//       retries++;
+      
+//       // If it's the last retry, throw the error
+//       if (retries >= maxRetries) {
+//         throw error;
+//       }
+      
+//       // Wait before retrying (increasing delay with each retry)
+//       await new Promise(resolve => setTimeout(resolve, 1000 * retries));
+      
+//       console.log(`Retrying request (${retries}/${maxRetries})...`);
+//     }
+//   }
+// };
+
 export default api;

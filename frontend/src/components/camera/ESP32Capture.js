@@ -14,6 +14,7 @@ const ESP32Capture = ({ onCapture }) => {
   const [streamUrl, setStreamUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [streamError, setStreamError] = useState(false);
+  const [streamKey, setStreamKey] = useState(0);
   
   // Set stream URL when ESP32 is connected
   useEffect(() => {
@@ -25,37 +26,41 @@ const ESP32Capture = ({ onCapture }) => {
     }
   }, [cameraMode, esp32Status, esp32IpAddress]);
   
-  // Handle image capture
   const handleCapture = useCallback(async () => {
     try {
       setIsLoading(true);
-      
+      // Store the current stream URL - we'll only temporarily hide it
+      const currentUrl = streamUrl;
+      // Only clear the stream during capture
+      setStreamUrl('');
+      setStreamKey(prev => prev + 1); // Force remount
+  
       if (cameraMode === 'ESP32' && esp32Status === 'connected') {
         const ipAddress = await captureImage();
         if (ipAddress && onCapture) {
-          onCapture(ipAddress);
+          await onCapture(ipAddress);
         }
       }
+  
+      // Restore the stream with a new timestamp to refresh it
+      const timestamp = new Date().getTime();
+      setStreamUrl(`http://${esp32IpAddress}/stream?t=${timestamp}`);
     } finally {
       setIsLoading(false);
     }
-  }, [cameraMode, esp32Status, captureImage, onCapture]);
+  }, [cameraMode, esp32Status, captureImage, onCapture, esp32IpAddress, streamUrl]);
   
-  // Handle stream error
   const handleStreamError = () => {
     setStreamError(true);
   };
   
-  // Refresh stream
   const handleRefreshStream = () => {
     setStreamError(false);
     
-    // Force reload by updating URL with timestamp
     const timestamp = new Date().getTime();
     setStreamUrl(`http://${esp32IpAddress}/stream?t=${timestamp}`);
   };
   
-  // Only show ESP32 stream if camera mode is ESP32
   if (cameraMode !== 'ESP32') {
     return null;
   }

@@ -169,9 +169,9 @@ static esp_err_t stream_handler(httpd_req_t *req){
 static esp_err_t capture_handler(httpd_req_t *req) {
   // Set timeout and clear existing resources
   unsigned long startTime = millis();
-  const unsigned long CAPTURE_TIMEOUT = 5000; // 5 seconds max
+  const unsigned long CAPTURE_TIMEOUT = 8000; // 8 seconds max
   
-  // Prepare response headers
+  // Prepare response headers - important for CORS
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
   httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, OPTIONS");
   httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
@@ -179,7 +179,15 @@ static esp_err_t capture_handler(httpd_req_t *req) {
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
   httpd_resp_set_hdr(req, "Cross-Origin-Resource-Policy", "cross-origin");
   
-  // Switch to capture mode with lower resolution for reliability
+  // Flush any previous frames
+  camera_fb_t *fb = NULL;
+  fb = esp_camera_fb_get();
+  if (fb) {
+    esp_camera_fb_return(fb);
+    fb = NULL;
+  }
+  
+  // Configure camera for high quality capture with better exposure
   sensor_t *s = esp_camera_sensor_get();
   if (!s) {
     httpd_resp_set_status(req, "500 Internal Server Error");
@@ -187,28 +195,38 @@ static esp_err_t capture_handler(httpd_req_t *req) {
     return ESP_FAIL;
   }
   
-  // Use XGA (1024x768) instead of UXGA for better reliability but still good quality
-  s->set_framesize(s, FRAMESIZE_XGA);
-  s->set_quality(s, 12);
+  // Save original settings to restore later
+  int orig_framesize = s->status.framesize;
+  int orig_quality = s->status.quality;
+  int orig_brightness = s->status.brightness;
+  int orig_contrast = s->status.contrast;
+  int orig_saturation = s->status.saturation;
+  int orig_ae_level = s->status.ae_level;
+  int orig_aec_value = s->status.aec_value;
+  int orig_gainceiling = s->status.gainceiling;
   
-  // First try to get current frame and free it to reset the buffer
-  camera_fb_t *fb = esp_camera_fb_get();
-  if (fb) {
-    esp_camera_fb_return(fb);
-    fb = NULL;
-  }
+  // Apply optimized settings for capture (brighter image)
+  s->set_framesize(s, FRAMESIZE_VGA);     // VGA for reliability
+  s->set_quality(s, 10);                  // Good quality
+  s->set_brightness(s, 1);                // Increase brightness (range -2 to 2)
+  s->set_contrast(s, 1);                  // Slight increase in contrast
+  s->set_saturation(s, 1);                // Slightly more saturated
+  s->set_gainceiling(s, GAINCEILING_4X);  // Higher gain for better low-light performance
+  s->set_exposure_ctrl(s, 1);             // Enable auto exposure
+  s->set_ae_level(s, 1);                  // Slight positive exposure compensation (range -2 to 2)
+  s->set_aec_value(s, 500);               // Higher exposure time (0-1200)
   
-  // Short delay to let camera settings apply
-  delay(100);
+  // Short delay to let settings apply
+  delay(200);
   
-  // Try to get a fresh frame
-  for (int attempt = 0; attempt < 3; attempt++) {
+  // Try multiple times to get a good frame
+  for (int attempt = 0; attempt < 5; attempt++) {  // Increased to 5 attempts
     if (millis() - startTime > CAPTURE_TIMEOUT) {
       break;
     }
     
     fb = esp_camera_fb_get();
-    if (fb && fb->len > 0 && fb->buf != NULL) {
+    if (fb && fb->len > 1000) { // Make sure we have a meaningful image
       break;
     }
     
@@ -218,17 +236,24 @@ static esp_err_t capture_handler(httpd_req_t *req) {
     }
     
     Serial.printf("Capture attempt %d failed\n", attempt + 1);
-    delay(100);
+    delay(300);  // Longer wait between attempts
   }
   
-  // Check if we got a valid frame
-  if (!fb || fb->len == 0 || fb->buf == NULL) {
+  // Check for valid frame
+  if (!fb || fb->len < 1000) {
     if (fb) {
       esp_camera_fb_return(fb);
     }
     
-    // Reset camera and return error
-    s->set_framesize(s, FRAMESIZE_VGA);
+    // Restore original settings
+    s->set_framesize(s, orig_framesize);
+    s->set_quality(s, orig_quality);
+    s->set_brightness(s, orig_brightness);
+    s->set_contrast(s, orig_contrast);
+    s->set_saturation(s, orig_saturation);
+    s->set_ae_level(s, orig_ae_level);
+    s->set_aec_value(s, orig_aec_value);
+    s->set_gainceiling(s, orig_gainceiling);
     
     httpd_resp_set_status(req, "500 Internal Server Error");
     httpd_resp_send(req, "Failed to capture valid image", HTTPD_RESP_USE_STRLEN);
@@ -237,7 +262,6 @@ static esp_err_t capture_handler(httpd_req_t *req) {
   
   // Set content type and send image data
   httpd_resp_set_type(req, "image/jpeg");
-  httpd_resp_set_status(req, "200 OK");
   
   Serial.printf("Sending %d bytes of image data\n", fb->len);
   esp_err_t res = httpd_resp_send(req, (const char *)fb->buf, fb->len);
@@ -245,12 +269,36 @@ static esp_err_t capture_handler(httpd_req_t *req) {
   // Free the frame buffer
   esp_camera_fb_return(fb);
   
-  // Return to streaming configuration
-  s->set_framesize(s, FRAMESIZE_VGA);
-  s->set_quality(s, 10);
+  // Restore original settings
+  s->set_framesize(s, orig_framesize);
+  s->set_quality(s, orig_quality);
+  s->set_brightness(s, orig_brightness);
+  s->set_contrast(s, orig_contrast);
+  s->set_saturation(s, orig_saturation);
+  s->set_ae_level(s, orig_ae_level);
+  s->set_aec_value(s, orig_aec_value);
+  s->set_gainceiling(s, orig_gainceiling);
   
   return res;
 }
+
+
+static esp_err_t stop_stream_handler(httpd_req_t *req) {
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, OPTIONS");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
+  
+  httpd_resp_send(req, "Stream stopped", HTTPD_RESP_USE_STRLEN);
+  
+  sensor_t *s = esp_camera_sensor_get();
+  if (s) {
+    configure_camera_for_quality(s, true);
+  }
+  
+  httpd_resp_send(req, "Stream stopped", HTTPD_RESP_USE_STRLEN);
+  return ESP_OK;
+}
+
 
 static esp_err_t options_handler(httpd_req_t *req){
   // CORS headers đầy đủ cho OPTIONS requests
@@ -279,7 +327,7 @@ static esp_err_t stream_options_handler(httpd_req_t *req){
 void startCameraServer() {
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 80;
-  config.max_uri_handlers = 8;
+  config.max_uri_handlers = 10;
   config.max_open_sockets = 5;  // Reduced for better stability
   config.stack_size = 8192;
   config.core_id = 0;  // Run HTTP server on core 0
@@ -315,6 +363,13 @@ void startCameraServer() {
     .uri       = "/*",
     .method    = HTTP_OPTIONS,
     .handler   = options_handler,
+    .user_ctx  = NULL
+  };
+
+  httpd_uri_t stop_stream_uri = {
+    .uri       = "/stopstream",
+    .method    = HTTP_GET,
+    .handler   = stop_stream_handler,
     .user_ctx  = NULL
   };
   

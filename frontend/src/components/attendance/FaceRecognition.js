@@ -1,4 +1,3 @@
-// src/components/attendance/FaceRecognition.js
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { 

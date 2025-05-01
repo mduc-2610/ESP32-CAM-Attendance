@@ -67,7 +67,6 @@ export const CameraProvider = ({ children }) => {
       if (mode === 'WEBCAM') {
         setCameraMode('WEBCAM');
         setEsp32Status('disconnected');
-        // Webcam will be initialized through the webcam component
       } else if (mode === 'ESP32' && ipAddress) {
         const connected = await testEsp32Connection(ipAddress);
         if (connected) {
