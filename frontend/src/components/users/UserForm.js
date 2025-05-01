@@ -7,23 +7,43 @@ import {
   TextField, 
   Button, 
   Grid,
-  CircularProgress
+  CircularProgress,
+  Autocomplete,
+  Chip
 } from '@mui/material';
-import { Save as SaveIcon, ArrowBack as ArrowBackIcon } from '@mui/icons-material';
-import { userService } from '../../services/api';
+import { Save as SaveIcon, ArrowBack as ArrowBackIcon, Add as AddIcon } from '@mui/icons-material';
+import { userService, tagService } from '../../services/api';
 import { toast } from 'react-toastify';
 
 const UserForm = ({ isEdit = false }) => {
   const [user, setUser] = useState({
     name: '',
     email: '',
-    tag: ''
+    tag_ids: []
   });
   const [loading, setLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
+  const [availableTags, setAvailableTags] = useState([]);
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [newTagName, setNewTagName] = useState('');
   
   const navigate = useNavigate();
   const { id } = useParams();
+  
+  // Load tags
+  useEffect(() => {
+    const fetchTags = async () => {
+      try {
+        const tags = await tagService.getAllTags();
+        setAvailableTags(tags);
+      } catch (error) {
+        console.error('Error loading tags:', error);
+        toast.error('Failed to load tags');
+      }
+    };
+    
+    fetchTags();
+  }, []);
   
   // Load user data if editing
   useEffect(() => {
@@ -32,11 +52,14 @@ const UserForm = ({ isEdit = false }) => {
         try {
           setLoading(true);
           const userData = await userService.getUserById(id);
+          
           setUser({
             name: userData.name,
             email: userData.email,
-            tag: userData.tag || ''
+            tag_ids: userData.tags.map(tag => tag.id)
           });
+          
+          setSelectedTags(userData.tags);
         } catch (error) {
           toast.error('Failed to load user data');
           console.error('Error loading user:', error);
@@ -56,6 +79,43 @@ const UserForm = ({ isEdit = false }) => {
       ...prev,
       [name]: value
     }));
+  };
+  
+  const handleTagChange = (event, newTags) => {
+    setSelectedTags(newTags);
+    setUser(prev => ({
+      ...prev,
+      tag_ids: newTags.map(tag => tag.id)
+    }));
+  };
+  
+  const handleCreateTag = async () => {
+    if (!newTagName.trim()) {
+      toast.error('Tag name cannot be empty');
+      return;
+    }
+    
+    // Check if tag already exists
+    if (availableTags.some(tag => tag.name.toLowerCase() === newTagName.toLowerCase())) {
+      toast.error('Tag already exists');
+      return;
+    }
+    
+    try {
+      const newTag = await tagService.createTag({ name: newTagName });
+      setAvailableTags([...availableTags, newTag]);
+      setSelectedTags([...selectedTags, newTag]);
+      setUser(prev => ({
+        ...prev,
+        tag_ids: [...prev.tag_ids, newTag.id]
+      }));
+      
+      setNewTagName('');
+      toast.success('Tag created successfully');
+    } catch (error) {
+      toast.error('Failed to create tag');
+      console.error('Error creating tag:', error);
+    }
   };
   
   const handleSubmit = async (e) => {
@@ -147,14 +207,53 @@ const UserForm = ({ isEdit = false }) => {
           </Grid>
           
           <Grid item xs={12}>
-            <TextField
-              name="tag"
-              label="Tag (e.g., CNMP4)"
-              value={user.tag}
-              onChange={handleChange}
-              fullWidth
-              helperText="Optional tag for grouping users"
+            <Autocomplete
+              multiple
+              id="tags"
+              options={availableTags}
+              value={selectedTags}
+              onChange={handleTagChange}
+              getOptionLabel={(option) => option.name}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              renderTags={(value, getTagProps) =>
+                value.map((option, index) => (
+                  <Chip 
+                    variant="outlined" 
+                    label={option.name} 
+                    {...getTagProps({ index })} 
+                  />
+                ))
+              }
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Tags"
+                  placeholder="Select tags"
+                  helperText="Select or create tags to group users"
+                />
+              )}
             />
+          </Grid>
+          
+          <Grid item xs={12}>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <TextField
+                name="newTagName"
+                label="New Tag Name"
+                value={newTagName}
+                onChange={(e) => setNewTagName(e.target.value)}
+                fullWidth
+              />
+              <Button
+                variant="contained"
+                color="secondary"
+                startIcon={<AddIcon />}
+                onClick={handleCreateTag}
+                disabled={!newTagName.trim()}
+              >
+                Add
+              </Button>
+            </Box>
           </Grid>
           
           <Grid item xs={12}>

@@ -1,5 +1,4 @@
-// src/components/attendance/SessionForm.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Box, 
@@ -8,26 +7,56 @@ import {
   TextField, 
   Button, 
   Grid,
-  FormControl,
-  FormControlLabel,
-  RadioGroup,
-  Radio,
-  InputLabel,
-  MenuItem,
-  Select,
-  Chip,
   Divider,
-  Alert
+  Chip,
+  Alert,
+  Tabs,
+  Tab,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  IconButton
 } from '@mui/material';
 import { AdapterMoment } from '@mui/x-date-pickers/AdapterMoment';
 import { LocalizationProvider, DatePicker, TimePicker } from '@mui/x-date-pickers';
-import { Save as SaveIcon, ArrowBack as ArrowBackIcon, PersonAdd as PersonAddIcon } from '@mui/icons-material';
-import { attendanceService } from '../../services/api';
+import { 
+  Save as SaveIcon, 
+  ArrowBack as ArrowBackIcon, 
+  PersonAdd as PersonAddIcon,
+  Delete as DeleteIcon,
+  Group as GroupIcon,
+  Person as PersonIcon
+} from '@mui/icons-material';
+import { attendanceService, tagService, userService } from '../../services/api';
 import { toast } from 'react-toastify';
 import moment from 'moment';
 import UserSearch from '../users/UserSearch';
+import TagSearch from '../users/TagSearch';
+import UsersByTagList from '../users/UsersByTagList';
 import CameraSelector from '../camera/CameraSelector';
 import { useCamera } from '../../context/CameraContext';
+
+// Tab Panel Component
+const TabPanel = (props) => {
+  const { children, value, index, ...other } = props;
+
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`user-selection-tabpanel-${index}`}
+      aria-labelledby={`user-selection-tab-${index}`}
+      {...other}
+    >
+      {value === index && (
+        <Box sx={{ pt: 2 }}>
+          {children}
+        </Box>
+      )}
+    </div>
+  );
+};
 
 const SessionForm = () => {
   const navigate = useNavigate();
@@ -43,7 +72,25 @@ const SessionForm = () => {
   });
   
   const [selectedUsers, setSelectedUsers] = useState([]);
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [availableTags, setAvailableTags] = useState([]);
+  const [currentTagId, setCurrentTagId] = useState(null);
   const [submitLoading, setSubmitLoading] = useState(false);
+  const [tabValue, setTabValue] = useState(0);
+  
+  // Load available tags
+  useEffect(() => {
+    const fetchTags = async () => {
+      try {
+        const tags = await tagService.getAllTags();
+        setAvailableTags(tags);
+      } catch (error) {
+        console.error('Error loading tags:', error);
+      }
+    };
+    
+    fetchTags();
+  }, []);
   
   // Handle form field changes
   const handleChange = (e) => {
@@ -70,16 +117,51 @@ const SessionForm = () => {
     });
   };
   
-  // Handle user selection
+  // Handle tab change
+  const handleTabChange = (event, newValue) => {
+    setTabValue(newValue);
+  };
+  
+  // Handle individual user selection
   const handleUserSelect = (user) => {
     if (!selectedUsers.some(u => u.id === user.id)) {
       setSelectedUsers([...selectedUsers, user]);
     }
   };
   
-  // Handle user removal
+  // Handle individual user removal
   const handleRemoveUser = (userId) => {
     setSelectedUsers(selectedUsers.filter(user => user.id !== userId));
+  };
+  
+  // Handle tag selection
+  const handleTagSelect = (tag) => {
+    if (!selectedTags.some(t => t.id === tag.id)) {
+      setSelectedTags([...selectedTags, tag]);
+      setCurrentTagId(tag.id);
+    }
+  };
+  
+  // Handle tag removal
+  const handleRemoveTag = (tagId) => {
+    setSelectedTags(selectedTags.filter(tag => tag.id !== tagId));
+    
+    // Also remove users that were only selected because of this tag
+    const tagUsers = selectedUsers.filter(user => 
+      user.tags.some(t => t.id === tagId) && 
+      !user.tags.some(t => selectedTags.some(st => st.id !== tagId && st.id === t.id))
+    );
+    
+    if (tagUsers.length > 0) {
+      const userIds = tagUsers.map(u => u.id);
+      setSelectedUsers(selectedUsers.filter(user => !userIds.includes(user.id)));
+    }
+    
+    // Set current tag to first remaining tag or null
+    if (currentTagId === tagId) {
+      const remainingTags = selectedTags.filter(tag => tag.id !== tagId);
+      setCurrentTagId(remainingTags.length > 0 ? remainingTags[0].id : null);
+    }
   };
   
   // Form submission
@@ -201,27 +283,115 @@ const SessionForm = () => {
                 Target Users
               </Typography>
               
-              <UserSearch 
-                onUserSelect={handleUserSelect} 
-                selectedUsers={selectedUsers}
-                label="Add Users"
-                placeholder="Search and add users to this session"
-              />
+              <Tabs 
+                value={tabValue} 
+                onChange={handleTabChange} 
+                variant="fullWidth" 
+                sx={{ mb: 2 }}
+              >
+                <Tab icon={<PersonIcon />} label="Individual Users" />
+                <Tab icon={<GroupIcon />} label="Users by Tag" />
+              </Tabs>
+              
+              <TabPanel value={tabValue} index={0}>
+                <UserSearch 
+                  onUserSelect={handleUserSelect} 
+                  selectedUsers={selectedUsers}
+                  label="Add Users"
+                  placeholder="Search and add users to this session"
+                />
+              </TabPanel>
+              
+              <TabPanel value={tabValue} index={1}>
+                <Grid container spacing={2}>
+                  <Grid item xs={12}>
+                    <TagSearch 
+                      onTagSelect={handleTagSelect}
+                      selectedTags={selectedTags}
+                      label="Add Tags"
+                      placeholder="Search and add tags to include users"
+                    />
+                  </Grid>
+                  
+                  {selectedTags.length > 0 && (
+                    <Grid item xs={12}>
+                      <Paper variant="outlined" sx={{ p: 2, mt: 2 }}>
+                        <Typography variant="subtitle1" gutterBottom>
+                          Selected Tags:
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                          {selectedTags.map(tag => (
+                            <Chip
+                              key={tag.id}
+                              label={tag.name}
+                              color="primary"
+                              onClick={() => setCurrentTagId(tag.id)}
+                              onDelete={() => handleRemoveTag(tag.id)}
+                              variant={currentTagId === tag.id ? "filled" : "outlined"}
+                            />
+                          ))}
+                        </Box>
+                      </Paper>
+                    </Grid>
+                  )}
+                  
+                  {currentTagId && (
+                    <Grid item xs={12}>
+                      <UsersByTagList
+                        tagId={currentTagId}
+                        selectedUsers={selectedUsers}
+                        onUserSelect={handleUserSelect}
+                        onUserDeselect={handleRemoveUser}
+                      />
+                    </Grid>
+                  )}
+                </Grid>
+              </TabPanel>
+            </Grid>
+            
+            <Grid item xs={12}>
+              <Divider sx={{ my: 2 }} />
+              <Typography variant="h6" gutterBottom>
+                Selected Users ({selectedUsers.length})
+              </Typography>
               
               {selectedUsers.length > 0 ? (
-                <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                <List>
                   {selectedUsers.map(user => (
-                    <Chip
-                      key={user.id}
-                      label={`${user.name} ${user.tag ? `(${user.tag})` : ''}`}
-                      onDelete={() => handleRemoveUser(user.id)}
-                      color="primary"
-                      variant="outlined"
-                    />
+                    <ListItem key={user.id}>
+                      <ListItemText 
+                        primary={user.name} 
+                        secondary={
+                          <Box>
+                            <Typography variant="body2" component="span">
+                              {user.email}
+                            </Typography>
+                            {user.tags && user.tags.length > 0 && (
+                              <Box sx={{ mt: 0.5, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                {user.tags.map(tag => (
+                                  <Chip 
+                                    key={tag.id}
+                                    label={tag.name}
+                                    size="small"
+                                    color={selectedTags.some(t => t.id === tag.id) ? "primary" : "default"}
+                                    variant="outlined"
+                                  />
+                                ))}
+                              </Box>
+                            )}
+                          </Box>
+                        } 
+                      />
+                      <ListItemSecondaryAction>
+                        <IconButton edge="end" onClick={() => handleRemoveUser(user.id)}>
+                          <DeleteIcon />
+                        </IconButton>
+                      </ListItemSecondaryAction>
+                    </ListItem>
                   ))}
-                </Box>
+                </List>
               ) : (
-                <Alert severity="info" sx={{ mt: 2 }}>
+                <Alert severity="info">
                   No users selected. Please add at least one user.
                 </Alert>
               )}

@@ -14,7 +14,8 @@ import {
   Button,
   IconButton,
   InputAdornment,
-  Chip
+  Chip,
+  Stack
 } from '@mui/material';
 import { 
   Search as SearchIcon, 
@@ -61,10 +62,11 @@ const UserList = () => {
     if (searchQuery.trim() === '') {
       setFilteredUsers(users);
     } else {
+      const lowerQuery = searchQuery.toLowerCase();
       const filtered = users.filter(user => 
-        user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (user.tag && user.tag.toLowerCase().includes(searchQuery.toLowerCase()))
+        user.name.toLowerCase().includes(lowerQuery) ||
+        user.email.toLowerCase().includes(lowerQuery) ||
+        user.tags.some(tag => tag.name.toLowerCase().includes(lowerQuery))
       );
       setFilteredUsers(filtered);
     }
@@ -102,6 +104,11 @@ const UserList = () => {
   
   const handleAddFaceImages = (userId) => {
     navigate(`/users/${userId}/register-face`);
+  };
+  
+  const handleTagClick = (tagId) => {
+    // Navigate to filtered list of users with this tag
+    navigate(`/users?tagId=${tagId}`);
   };
   
   return (
@@ -142,7 +149,7 @@ const UserList = () => {
             <TableRow>
               <TableCell>Name</TableCell>
               <TableCell>Email</TableCell>
-              <TableCell>Tag</TableCell>
+              <TableCell>Tags</TableCell>
               <TableCell>UUID</TableCell>
               <TableCell>Actions</TableCell>
             </TableRow>
@@ -164,8 +171,24 @@ const UserList = () => {
                     <TableCell>{user.name}</TableCell>
                     <TableCell>{user.email}</TableCell>
                     <TableCell>
-                      {user.tag && (
-                        <Chip label={user.tag} size="small" />
+                      {user.tags && user.tags.length > 0 ? (
+                        <Stack direction="row" spacing={1} flexWrap="wrap">
+                          {user.tags.map(tag => (
+                            <Chip 
+                              key={tag.id} 
+                              label={tag.name} 
+                              size="small" 
+                              color="primary" 
+                              variant="outlined" 
+                              onClick={() => handleTagClick(tag.id)}
+                              style={{ margin: '2px' }}
+                            />
+                          ))}
+                        </Stack>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">
+                          No tags
+                        </Typography>
                       )}
                     </TableCell>
                     <TableCell>{user.uuid}</TableCell>

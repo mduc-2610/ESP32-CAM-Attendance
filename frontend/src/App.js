@@ -21,6 +21,7 @@ import SessionForm from './pages/attendance/SessionForm';
 import SessionDetails from './pages/attendance/SessionDetails';
 import FaceRecognition from './pages/attendance/FaceRecognition';
 import AttendanceReport from './pages/attendance/AttendanceReport';
+import TagManagement from './pages/users/TagManagement';
 import NotFound from './pages/NotFound';
 
 // Create theme
@@ -53,6 +54,7 @@ function App() {
                   <Route path="create" element={<UserForm isEdit={false} />} />
                   <Route path=":id/edit" element={<UserForm isEdit={true} />} />
                   <Route path=":id/register-face" element={<FaceRegistration />} />
+                  <Route path="tags" element={<TagManagement />} />
                 </Route>
                 
                 {/* Attendance Routes */}

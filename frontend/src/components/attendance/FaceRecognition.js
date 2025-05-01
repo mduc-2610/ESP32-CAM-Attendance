@@ -19,16 +19,28 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
-  IconButton
+  IconButton,
+  Tabs,
+  Tab,
+  Chip,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Badge,
+  ListItemSecondaryAction
 } from '@mui/material';
 import { 
   ArrowBack as ArrowBackIcon,
   Stop as StopIcon,
   Check as CheckIcon,
   Face as FaceIcon,
-  CameraAlt as CameraIcon
+  CameraAlt as CameraIcon,
+  ExpandMore as ExpandMoreIcon,
+  Person as PersonIcon,
+  Group as GroupIcon,
+  CheckCircle as CheckCircleIcon
 } from '@mui/icons-material';
-import { attendanceService, cameraService } from '../../services/api';
+import { attendanceService, cameraService, tagService } from '../../services/api';
 import { toast } from 'react-toastify';
 import moment from 'moment';
 import { useCamera } from '../../context/CameraContext';
@@ -36,6 +48,27 @@ import { useAttendance } from '../../context/AttendanceContext';
 import CameraSelector from '../camera/CameraSelector';
 import WebcamCapture from '../camera/WebcamCapture';
 import ESP32Capture from '../camera/ESP32Capture';
+
+// Tab Panel Component
+function TabPanel(props) {
+  const { children, value, index, ...other } = props;
+
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`user-tracking-tabpanel-${index}`}
+      aria-labelledby={`user-tracking-tab-${index}`}
+      {...other}
+    >
+      {value === index && (
+        <Box sx={{ py: 2 }}>
+          {children}
+        </Box>
+      )}
+    </div>
+  );
+}
 
 const FaceRecognition = () => {
   const { id } = useParams();
@@ -55,18 +88,83 @@ const FaceRecognition = () => {
   const [loading, setLoading] = useState(false);
   const [processingImage, setProcessingImage] = useState(false);
   const [confirmFinishOpen, setConfirmFinishOpen] = useState(false);
+  const [tabValue, setTabValue] = useState(0);
+  
+  // New state for tracking users by tags
+  const [usersByTag, setUsersByTag] = useState({});
+  const [remainingUsers, setRemainingUsers] = useState([]);
+  const [expandedTag, setExpandedTag] = useState(null);
   
   // Recognition interval
   const [autoRecognition, setAutoRecognition] = useState(false);
   const [recognitionInterval, setRecognitionInterval] = useState(null);
   const [countdown, setCountdown] = useState(5);
   
+  // Handle tab change
+  const handleTabChange = (event, newValue) => {
+    setTabValue(newValue);
+  };
+  
   // Load session data
   useEffect(() => {
     const fetchSessionData = async () => {
       try {
         setLoading(true);
-        await loadSession(id);
+        const session = await loadSession(id);
+        
+        if (session) {
+          // Organize users by tag
+          const usersByTagMap = {};
+          const userMap = {};
+          
+          // Create user map for quick access
+          session.target_users_details.forEach(user => {
+            userMap[user.id] = user;
+            
+            // Add to "No Tag" initially
+            if (!usersByTagMap["no-tag"]) {
+              usersByTagMap["no-tag"] = {
+                id: "no-tag",
+                name: "No Tag",
+                users: []
+              };
+            }
+            
+            if (!user.tags || user.tags.length === 0) {
+              usersByTagMap["no-tag"].users.push(user);
+            }
+          });
+          
+          // Process users with tags
+          session.target_users_details.forEach(user => {
+            if (user.tags && user.tags.length > 0) {
+              user.tags.forEach(tag => {
+                if (!usersByTagMap[tag.id]) {
+                  usersByTagMap[tag.id] = {
+                    id: tag.id,
+                    name: tag.name,
+                    users: []
+                  };
+                }
+                usersByTagMap[tag.id].users.push(user);
+              });
+            }
+          });
+          
+          setUsersByTag(usersByTagMap);
+          
+          // Set remaining users (not yet recognized)
+          const recognizedIds = recognizedUsers.map(u => u.id);
+          const remaining = session.target_users_details.filter(
+            user => !recognizedIds.includes(user.id)
+          );
+          setRemainingUsers(remaining);
+          
+          // Set first tag as expanded by default
+          if (Object.keys(usersByTagMap).length > 0) {
+            setExpandedTag(Object.keys(usersByTagMap)[0]);
+          }
+        }
       } catch (error) {
         toast.error('Failed to load session');
         console.error('Error loading session:', error);
@@ -85,6 +183,33 @@ const FaceRecognition = () => {
       }
     };
   }, [id, loadSession, navigate, recognitionInterval]);
+  
+  // Update remaining users when recognized users change
+  useEffect(() => {
+    if (currentSession) {
+      const recognizedIds = recognizedUsers.map(u => u.id);
+      const remaining = currentSession.target_users_details.filter(
+        user => !recognizedIds.includes(user.id)
+      );
+      setRemainingUsers(remaining);
+      
+      // Update users by tag
+      const updatedUsersByTag = { ...usersByTag };
+      
+      Object.keys(updatedUsersByTag).forEach(tagId => {
+        updatedUsersByTag[tagId].users = updatedUsersByTag[tagId].users.filter(
+          user => !recognizedIds.includes(user.id)
+        );
+      });
+      
+      setUsersByTag(updatedUsersByTag);
+    }
+  }, [currentSession, recognizedUsers]);
+  
+  // Toggle accordion
+  const handleAccordionChange = (tagId) => (event, isExpanded) => {
+    setExpandedTag(isExpanded ? tagId : null);
+  };
   
   // Perform face recognition
   const performRecognition = useCallback(async () => {
@@ -122,12 +247,17 @@ const FaceRecognition = () => {
             if (match.attendance_marked) {
               // Add to recognized users if not already present
               if (!recognizedUsers.some(user => user.id === match.user_id)) {
+                const recognizedUser = currentSession.target_users_details.find(
+                  user => user.id === match.user_id
+                );
+                
                 setRecognizedUsers(prev => [
                   ...prev,
                   {
                     id: match.user_id,
                     name: match.name,
                     timestamp: new Date(),
+                    tags: recognizedUser ? recognizedUser.tags : []
                   }
                 ]);
                 
@@ -230,6 +360,18 @@ const FaceRecognition = () => {
     const total = currentSession.target_users.length;
     const present = recognizedUsers.length;
     const remaining = total - present;
+    
+    return { total, present, remaining };
+  };
+  
+  // Calculate tag-specific statistics
+  const calculateTagStats = (tagId) => {
+    if (!usersByTag[tagId]) return { total: 0, present: 0, remaining: 0 };
+    
+    const tagUsers = usersByTag[tagId].users;
+    const total = tagUsers.length;
+    const remaining = total;
+    const present = 0;
     
     return { total, present, remaining };
   };
@@ -364,35 +506,131 @@ const FaceRecognition = () => {
         </Grid>
         
         <Grid item xs={12} md={4}>
-          <Paper elevation={3} sx={{ p: 3, height: '100%' }}>
-            <Typography variant="h6" gutterBottom>
-              Recognized Users
-            </Typography>
+          <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
+            <Tabs 
+              value={tabValue} 
+              onChange={handleTabChange} 
+              variant="fullWidth" 
+              sx={{ mb: 1 }}
+            >
+              <Tab icon={<PersonIcon />} label="Recognized" />
+              <Tab 
+                icon={
+                  <Badge badgeContent={remainingUsers.length} color="error">
+                    <GroupIcon />
+                  </Badge>
+                } 
+                label="Remaining" 
+              />
+            </Tabs>
             
-            {recognizedUsers.length === 0 ? (
-              <Alert severity="info">
-                No users recognized yet. Start capturing to mark attendance.
-              </Alert>
-            ) : (
-              <List sx={{ maxHeight: 400, overflow: 'auto' }}>
-                {recognizedUsers.map((user, index) => (
-                  <React.Fragment key={user.id}>
-                    <ListItem>
-                      <ListItemAvatar>
-                        <Avatar sx={{ bgcolor: 'primary.main' }}>
-                          <FaceIcon />
-                        </Avatar>
-                      </ListItemAvatar>
-                      <ListItemText 
-                        primary={user.name} 
-                        secondary={moment(user.timestamp).format('h:mm:ss A')} 
-                      />
-                    </ListItem>
-                    {index < recognizedUsers.length - 1 && <Divider />}
-                  </React.Fragment>
-                ))}
-              </List>
-            )}
+            <TabPanel value={tabValue} index={0}>
+              <Typography variant="h6" gutterBottom>
+                Recognized Users ({recognizedUsers.length})
+              </Typography>
+              
+              {recognizedUsers.length === 0 ? (
+                <Alert severity="info">
+                  No users recognized yet. Start capturing to mark attendance.
+                </Alert>
+              ) : (
+                <List sx={{ maxHeight: 400, overflow: 'auto' }}>
+                  {recognizedUsers.map((user, index) => (
+                    <React.Fragment key={user.id}>
+                      <ListItem>
+                        <ListItemAvatar>
+                          <Avatar sx={{ bgcolor: 'primary.main' }}>
+                            <FaceIcon />
+                          </Avatar>
+                        </ListItemAvatar>
+                        <ListItemText 
+                          primary={user.name} 
+                          secondary={
+                            <Box>
+                              <Typography variant="body2" component="span">
+                                {moment(user.timestamp).format('h:mm:ss A')}
+                              </Typography>
+                              
+                              {user.tags && user.tags.length > 0 && (
+                                <Box sx={{ mt: 0.5, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                  {user.tags.map(tag => (
+                                    <Chip 
+                                      key={tag.id}
+                                      label={tag.name}
+                                      size="small"
+                                      color="primary"
+                                      variant="outlined"
+                                    />
+                                  ))}
+                                </Box>
+                              )}
+                            </Box>
+                          } 
+                        />
+                        <ListItemSecondaryAction>
+                          <CheckCircleIcon color="success" />
+                        </ListItemSecondaryAction>
+                      </ListItem>
+                      {index < recognizedUsers.length - 1 && <Divider />}
+                    </React.Fragment>
+                  ))}
+                </List>
+              )}
+            </TabPanel>
+            
+            <TabPanel value={tabValue} index={1}>
+              <Typography variant="h6" gutterBottom>
+                Remaining Users ({remainingUsers.length})
+              </Typography>
+              
+              {remainingUsers.length === 0 ? (
+                <Alert severity="success">
+                  All users have been recognized!
+                </Alert>
+              ) : (
+                <Box>
+                  {Object.keys(usersByTag).map((tagId) => {
+                    const tag = usersByTag[tagId];
+                    
+                    // Skip empty tags
+                    if (tag.users.length === 0) return null;
+                    
+                    return (
+                      <Accordion 
+                        key={tagId}
+                        expanded={expandedTag === tagId}
+                        onChange={handleAccordionChange(tagId)}
+                      >
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                            <Typography>
+                              {tag.name}
+                            </Typography>
+                            <Chip 
+                              label={`${tag.users.length} users`} 
+                              size="small"
+                              color="primary"
+                            />
+                          </Box>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                          <List dense>
+                            {tag.users.map((user) => (
+                              <ListItem key={user.id}>
+                                <ListItemText 
+                                  primary={user.name} 
+                                  secondary={user.email} 
+                                />
+                              </ListItem>
+                            ))}
+                          </List>
+                        </AccordionDetails>
+                      </Accordion>
+                    );
+                  })}
+                </Box>
+              )}
+            </TabPanel>
           </Paper>
         </Grid>
       </Grid>

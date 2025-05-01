@@ -14,14 +14,18 @@ import {
   Divider,
   Container,
   useMediaQuery,
-  useTheme
+  useTheme,
+  Collapse
 } from '@mui/material';
 import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
   Person as PersonIcon,
   EventNote as EventIcon,
-  Assessment as ReportIcon
+  Assessment as ReportIcon,
+  LocalOffer as TagIcon,
+  ExpandLess,
+  ExpandMore
 } from '@mui/icons-material';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
 
@@ -31,18 +35,25 @@ const AppLayout = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(true);
+  const [attendanceMenuOpen, setAttendanceMenuOpen] = useState(true);
   const location = useLocation();
   
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
   };
   
-  const menuItems = [
-    { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
-    { text: 'Users', icon: <PersonIcon />, path: '/users' },
-    { text: 'Attendance', icon: <EventIcon />, path: '/attendance/sessions' },
-    { text: 'Reports', icon: <ReportIcon />, path: '/attendance/reports' },
-  ];
+  const toggleUserMenu = () => {
+    setUserMenuOpen(!userMenuOpen);
+  };
+  
+  const toggleAttendanceMenu = () => {
+    setAttendanceMenuOpen(!attendanceMenuOpen);
+  };
+  
+  const isPathActive = (path) => {
+    return location.pathname === path || location.pathname.startsWith(path + '/');
+  };
   
   const drawer = (
     <div>
@@ -53,19 +64,88 @@ const AppLayout = () => {
       </Toolbar>
       <Divider />
       <List>
-        {menuItems.map((item) => (
-          <ListItem 
-            button 
-            key={item.text} 
-            component={RouterLink} 
-            to={item.path}
-            selected={location.pathname === item.path || location.pathname.startsWith(item.path + '/')}
-            onClick={isMobile ? handleDrawerToggle : undefined}
-          >
-            <ListItemIcon>{item.icon}</ListItemIcon>
-            <ListItemText primary={item.text} />
-          </ListItem>
-        ))}
+        <ListItem 
+          button 
+          component={RouterLink} 
+          to="/"
+          selected={location.pathname === '/'}
+          onClick={isMobile ? handleDrawerToggle : undefined}
+        >
+          <ListItemIcon><DashboardIcon /></ListItemIcon>
+          <ListItemText primary="Dashboard" />
+        </ListItem>
+        
+        {/* Users Menu */}
+        <ListItem button onClick={toggleUserMenu}>
+          <ListItemIcon>
+            <PersonIcon />
+          </ListItemIcon>
+          <ListItemText primary="Users" />
+          {userMenuOpen ? <ExpandLess /> : <ExpandMore />}
+        </ListItem>
+        
+        <Collapse in={userMenuOpen} timeout="auto" unmountOnExit>
+          <List component="div" disablePadding>
+            <ListItem
+              button
+              component={RouterLink}
+              to="/users"
+              selected={isPathActive('/users') && location.pathname !== '/users/tags'}
+              onClick={isMobile ? handleDrawerToggle : undefined}
+              sx={{ pl: 4 }}
+            >
+              <ListItemText primary="Manage Users" />
+            </ListItem>
+            
+            <ListItem
+              button
+              component={RouterLink}
+              to="/users/tags"
+              selected={isPathActive('/users/tags')}
+              onClick={isMobile ? handleDrawerToggle : undefined}
+              sx={{ pl: 4 }}
+            >
+              <ListItemIcon><TagIcon /></ListItemIcon>
+              <ListItemText primary="Manage Tags" />
+            </ListItem>
+          </List>
+        </Collapse>
+        
+        {/* Attendance Menu */}
+        <ListItem button onClick={toggleAttendanceMenu}>
+          <ListItemIcon>
+            <EventIcon />
+          </ListItemIcon>
+          <ListItemText primary="Attendance" />
+          {attendanceMenuOpen ? <ExpandLess /> : <ExpandMore />}
+        </ListItem>
+        
+        <Collapse in={attendanceMenuOpen} timeout="auto" unmountOnExit>
+          <List component="div" disablePadding>
+            <ListItem
+              button
+              component={RouterLink}
+              to="/attendance/sessions"
+              selected={isPathActive('/attendance/sessions')}
+              onClick={isMobile ? handleDrawerToggle : undefined}
+              sx={{ pl: 4 }}
+            >
+              <ListItemText primary="Sessions" />
+            </ListItem>
+            
+            <ListItem
+              button
+              component={RouterLink}
+              to="/attendance/reports"
+              selected={isPathActive('/attendance/reports')}
+              onClick={isMobile ? handleDrawerToggle : undefined}
+              sx={{ pl: 4 }}
+            >
+              <ListItemIcon><ReportIcon /></ListItemIcon>
+              <ListItemText primary="Reports" />
+            </ListItem>
+          </List>
+        </Collapse>
       </List>
     </div>
   );
