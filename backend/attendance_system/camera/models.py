@@ -1,6 +1,8 @@
+import uuid
 from django.db import models
 
 class CameraConfiguration(models.Model):
+    id = models.UUIDField(primary_key=True, editable=False, default=uuid.uuid4, unique=True)
     name = models.CharField(max_length=50)
     ip_address = models.CharField(max_length=50)
     is_active = models.BooleanField(default=True)
@@ -15,6 +17,7 @@ class CameraConfiguration(models.Model):
         ordering = ['name']
 
 class FaceImage(models.Model):
+    id = models.UUIDField(primary_key=True, editable=False, default=uuid.uuid4, unique=True)
     user = models.ForeignKey('users.User', on_delete=models.CASCADE, related_name='face_images')
     image_path = models.CharField(max_length=255)
     is_primary = models.BooleanField(default=False)

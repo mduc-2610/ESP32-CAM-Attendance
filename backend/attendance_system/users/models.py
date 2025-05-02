@@ -7,6 +7,7 @@ from django.db.models.signals import post_save
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 
 class UserTag(models.Model):
+    id = models.UUIDField(primary_key=True, editable=False, default=uuid.uuid4, unique=True)
     name = models.CharField(max_length=50, unique=True)
     description = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -33,7 +34,7 @@ class CustomUserManager(BaseUserManager):
         return self.create_user(email, name, password, **extra_fields)
 
 class User(AbstractBaseUser, PermissionsMixin):
-    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    id = models.UUIDField(primary_key=True, editable=False, default=uuid.uuid4, unique=True)
     email = models.EmailField(unique=True)
     name = models.CharField(max_length=100)
 
@@ -56,5 +57,5 @@ class User(AbstractBaseUser, PermissionsMixin):
 def create_user_folder(sender, instance, created, **kwargs):
     """Create a folder for user's face images when a new user is created"""
     if created:
-        user_folder = os.path.join('media', str(instance.uuid))
+        user_folder = os.path.join('media', str(instance.id))
         os.makedirs(user_folder, exist_ok=True)

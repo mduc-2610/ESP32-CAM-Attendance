@@ -69,8 +69,7 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
         try:
             user = User.objects.get(id=user_id)
             
-            # Create user directory if it doesn't exist
-            user_dir = os.path.join(settings.MEDIA_ROOT, str(user.uuid))
+            user_dir = os.path.join(settings.MEDIA_ROOT, str(user.id))
             os.makedirs(user_dir, exist_ok=True)
             
             # Generate filename
@@ -80,7 +79,6 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
             
             # Process image based on camera mode
             if camera_mode == 'WEBCAM' and image_data:
-                # Decode base64 image
                 image_data = image_data.split(',')[1] if ',' in image_data else image_data
                 image_binary = base64.b64decode(image_data)
                 
@@ -128,7 +126,7 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
                 }, status=400)
             
             # Create face image record
-            relative_path = os.path.join(str(user.uuid), filename)
+            relative_path = os.path.join(str(user.id), filename)
             face_image = FaceImage.objects.create(
                 user=user,
                 image_path=relative_path,
@@ -254,12 +252,13 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
             # Process recognition results
             for face_result in face_results:
                 user_id = face_result['label']
+                print(f"Recognized user ID: {user_id}")
                 confidence = face_result['confidence']
                 
                 # Only consider high confidence matches for target users with face images
                 if user_id in target_user_ids and user_id in users_with_faces and confidence > 0.7:  # Confidence threshold
                     try:
-                        user = User.objects.get(id=int(user_id))
+                        user = User.objects.get(id=user_id)
                         
                         # Mark attendance for this user
                         attendance, created = Attendance.objects.update_or_create(
@@ -271,7 +270,7 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
                         matches.append({
                             'user_id': user.id,
                             'name': user.name,
-                            'uuid': str(user.uuid),
+                            'uuid': str(user.id),
                             'confidence': confidence,
                             'attendance_marked': True
                         })

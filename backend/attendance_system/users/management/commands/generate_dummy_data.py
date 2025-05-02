@@ -11,8 +11,11 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--count', type=int, default=10, help='Number of fake users to generate')
         parser.add_argument('--tags', type=str, default='CNMP4,IT101,AI202,CS305', help='Comma-separated list of tags')
-    
+        parser.add_argument('--delete', type=int, default=1, help='Delete all existing users before generating new ones')
+
     def handle(self, *args, **options):
+        if options['delete'] >= 1:
+            User.objects.all().delete()  
         count = options['count']
         tag_names = options['tags'].split(',')
         
@@ -41,7 +44,7 @@ class Command(BaseCommand):
                 user.tags.set(random.sample(tag_objects, random.randint(1, min(3, len(tag_objects)))))
                 
                 # Create user directory for face images
-                user_dir = os.path.join(settings.MEDIA_ROOT, str(user.uuid))
+                user_dir = os.path.join(settings.MEDIA_ROOT, str(user.id))
                 os.makedirs(user_dir, exist_ok=True)
                 
                 self.stdout.write(self.style.SUCCESS(f'Created user: {user.name} - {user.email} - Tags: {[tag.name for tag in user.tags.all()]}'))

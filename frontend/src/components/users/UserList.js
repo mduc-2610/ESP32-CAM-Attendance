@@ -150,7 +150,7 @@ const UserList = () => {
               <TableCell>Name</TableCell>
               <TableCell>Email</TableCell>
               <TableCell>Tags</TableCell>
-              <TableCell>UUID</TableCell>
+              <TableCell>ID</TableCell>
               <TableCell>Actions</TableCell>
             </TableRow>
           </TableHead>
@@ -191,7 +191,7 @@ const UserList = () => {
                         </Typography>
                       )}
                     </TableCell>
-                    <TableCell>{user.uuid}</TableCell>
+                    <TableCell>{user.id}</TableCell>
                     <TableCell>
                       <IconButton 
                         color="primary" 

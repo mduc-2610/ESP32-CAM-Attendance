@@ -1,7 +1,9 @@
+import uuid
 from django.db import models
 from users.models import User
 
 class AttendanceSession(models.Model):
+    id = models.UUIDField(primary_key=True, editable=False, default=uuid.uuid4, unique=True)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     session_date = models.DateField()
@@ -26,6 +28,7 @@ class AttendanceSession(models.Model):
         ordering = ['-session_date', 'name']
 
 class Attendance(models.Model):
+    id = models.UUIDField(primary_key=True, editable=False, default=uuid.uuid4, unique=True)
     session = models.ForeignKey(AttendanceSession, on_delete=models.CASCADE, related_name='attendances')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='attendances')
     timestamp = models.DateTimeField(auto_now_add=True)

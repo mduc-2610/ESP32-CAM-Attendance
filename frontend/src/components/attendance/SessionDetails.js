@@ -17,6 +17,7 @@ import {
   Divider,
   Alert,
   CircularProgress,
+  Stack,
   IconButton
 } from '@mui/material';
 import { 
@@ -58,8 +59,11 @@ const SessionDetails = () => {
   const handleResumeSession = () => {
     navigate(`/attendance/sessions/${id}/recognition`);
   };
+
+  const handleTagClick = (tagId) => {
+    navigate(`/users?tagId=${tagId}`);
+  };
   
-  // Calculate attendance statistics
   const calculateStats = () => {
     if (!session) return { total: 0, present: 0, absent: 0, percentage: 0 };
     
@@ -208,7 +212,27 @@ const SessionDetails = () => {
                   <TableRow key={user.id}>
                     <TableCell>{user.name}</TableCell>
                     <TableCell>{user.email}</TableCell>
-                    <TableCell>{user.tag || '-'}</TableCell>
+                    <TableCell>
+                    {user.tags && user.tags.length > 0 ? (
+                        <Stack direction="row" spacing={1} flexWrap="wrap">
+                          {user.tags.map(tag => (
+                            <Chip 
+                              key={tag.id} 
+                              label={tag.name} 
+                              size="small" 
+                              color="primary" 
+                              variant="outlined" 
+                              onClick={() => handleTagClick(tag.id)}
+                              style={{ margin: '2px' }}
+                            />
+                          ))}
+                        </Stack>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">
+                          No tags
+                        </Typography>
+                      )}
+                    </TableCell>
                     <TableCell>
                       {attendanceRecord ? (
                         isPresent ? (

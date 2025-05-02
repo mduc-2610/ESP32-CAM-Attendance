@@ -85,8 +85,16 @@ void configure_camera_for_quality(sensor_t * s, bool high_quality) {
     }
   }
 }
-
+static httpd_req_t* current_stream_req = NULL;
 static esp_err_t stream_handler(httpd_req_t *req){
+  if (current_stream_req != NULL) {
+    httpd_resp_sendstr_chunk(current_stream_req, NULL);
+    current_stream_req = NULL;
+    // Brief delay to allow previous connection to close
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+  }
+  current_stream_req = req;
+
   camera_fb_t * fb = NULL;
   esp_err_t res = ESP_OK;
   size_t _jpg_buf_len = 0;
@@ -163,6 +171,7 @@ static esp_err_t stream_handler(httpd_req_t *req){
   }
 
   Serial.println("Stream handler exited");
+  current_stream_req = NULL;
   return res;
 }
 

@@ -19,19 +19,27 @@ const ESP32Capture = ({ onCapture }) => {
   // Set stream URL when ESP32 is connected
   useEffect(() => {
     if (cameraMode === 'ESP32' && esp32Status === 'connected' && esp32IpAddress) {
-      setStreamUrl(`http://${esp32IpAddress}/stream`);
+      const timestamp = new Date().getTime();
+      setStreamUrl(`http://${esp32IpAddress}/stream?t=${timestamp}`);
       setStreamError(false);
-    } else {
-      setStreamUrl('');
     }
+  
+    return () => {
+      if (streamUrl) {
+        setStreamUrl('');
+        
+        if (esp32IpAddress) {
+          fetch(`http://${esp32IpAddress}/stopstream`)
+            .catch(err => console.log('Error stopping stream:', err));
+        }
+      }
+    };
   }, [cameraMode, esp32Status, esp32IpAddress]);
   
   const handleCapture = useCallback(async () => {
     try {
       setIsLoading(true);
-      // Store the current stream URL - we'll only temporarily hide it
       const currentUrl = streamUrl;
-      // Only clear the stream during capture
       setStreamUrl('');
       setStreamKey(prev => prev + 1); // Force remount
   
