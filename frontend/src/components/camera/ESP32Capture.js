@@ -76,9 +76,8 @@ const ESP32Capture = ({ onCapture }) => {
           <Box 
             sx={{ 
               mb: 2, 
-              width: '100%',
+              width: 640,
               height: 480,
-              maxWidth: 640,
               border: '1px solid #ccc', 
               borderRadius: 1, 
               overflow: 'hidden',
@@ -106,7 +105,7 @@ const ESP32Capture = ({ onCapture }) => {
                 <img 
                   src={streamUrl} 
                   alt="ESP32-CAM Stream" 
-                  style={{ maxWidth: '100%', maxHeight: '100%' }}
+                  style={{ width: '100%', height: '100%' }}
                   onError={handleStreamError}
                 />
                 {isLoading && (
@@ -142,8 +141,19 @@ const ESP32Capture = ({ onCapture }) => {
           </Button>
         </>
       ) : (
-        <Box sx={{ textAlign: 'center', p: 3 }}>
-          <Alert severity="info">
+        <Box sx={{ 
+            width: 640,
+            height: 480,
+            textAlign: 'center', 
+            p: 3,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            textAlign: 'center',
+          }}>
+          <Alert severity="info" sx={{ 
+            
+          }}>
             Please connect to an ESP32-CAM device to view the stream
           </Alert>
         </Box>

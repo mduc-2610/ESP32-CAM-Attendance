@@ -14,11 +14,14 @@ const WebcamCapture = ({ onCapture }) => {
   const webcamRef = useRef(null);
   
   useEffect(() => {
+    console.log("Webcam ref current:", webcamRef.current);
     if (webcamRef.current) {
+      console.log("Setting webcam ref");
       setWebcamRef(webcamRef.current);
     }
   }, [webcamRef, setWebcamRef]);
-  
+    
+
   const handleCapture = useCallback(async () => {
     const imageSrc = await captureImage();
     if (imageSrc && onCapture) {

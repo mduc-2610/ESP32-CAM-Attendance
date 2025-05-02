@@ -196,14 +196,14 @@ static esp_err_t capture_handler(httpd_req_t *req) {
   }
   
   // Save original settings to restore later
-  int orig_framesize = s->status.framesize;
+  framesize_t orig_framesize = (framesize_t)s->status.framesize;
   int orig_quality = s->status.quality;
   int orig_brightness = s->status.brightness;
   int orig_contrast = s->status.contrast;
   int orig_saturation = s->status.saturation;
   int orig_ae_level = s->status.ae_level;
   int orig_aec_value = s->status.aec_value;
-  int orig_gainceiling = s->status.gainceiling;
+  gainceiling_t orig_gainceiling = (gainceiling_t)s->status.gainceiling;
   
   // Apply optimized settings for capture (brighter image)
   s->set_framesize(s, FRAMESIZE_VGA);     // VGA for reliability
@@ -245,7 +245,7 @@ static esp_err_t capture_handler(httpd_req_t *req) {
       esp_camera_fb_return(fb);
     }
     
-    // Restore original settings
+    // Restore original settings before returning error
     s->set_framesize(s, orig_framesize);
     s->set_quality(s, orig_quality);
     s->set_brightness(s, orig_brightness);
@@ -281,7 +281,6 @@ static esp_err_t capture_handler(httpd_req_t *req) {
   
   return res;
 }
-
 
 static esp_err_t stop_stream_handler(httpd_req_t *req) {
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");

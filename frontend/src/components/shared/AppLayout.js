@@ -105,7 +105,6 @@ const AppLayout = () => {
               onClick={isMobile ? handleDrawerToggle : undefined}
               sx={{ pl: 4 }}
             >
-              <ListItemIcon><TagIcon /></ListItemIcon>
               <ListItemText primary="Manage Tags" />
             </ListItem>
           </List>
@@ -141,7 +140,6 @@ const AppLayout = () => {
               onClick={isMobile ? handleDrawerToggle : undefined}
               sx={{ pl: 4 }}
             >
-              <ListItemIcon><ReportIcon /></ListItemIcon>
               <ListItemText primary="Reports" />
             </ListItem>
           </List>

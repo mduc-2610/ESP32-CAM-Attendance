@@ -12,7 +12,12 @@ import {
   CardMedia,
   CardContent,
   CardActions,
-  Alert
+  Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions
 } from '@mui/material';
 import { 
   ArrowBack as ArrowBackIcon,
@@ -35,6 +40,9 @@ const FaceRegistration = () => {
   const [faceImages, setFaceImages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [captureLoading, setCaptureLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [imageToDelete, setImageToDelete] = useState(null);
   
   // Load user data and face images
   useEffect(() => {
@@ -79,6 +87,7 @@ const FaceRegistration = () => {
         
         // Add new image to the list
         setFaceImages(prev => [...prev, {
+          id: result.face_image.id,
           name: result.face_image.path.split('/').pop(),
           url: result.face_image.url
         }]);
@@ -93,18 +102,56 @@ const FaceRegistration = () => {
     }
   };
   
+  // Open delete confirmation dialog
+  const handleOpenDeleteDialog = (image) => {
+    setImageToDelete(image);
+    setConfirmDeleteOpen(true);
+  };
+  
+  // Close delete confirmation dialog
+  const handleCloseDeleteDialog = () => {
+    setConfirmDeleteOpen(false);
+    setImageToDelete(null);
+  };
+  
   // Handle image deletion
-  const handleDeleteImage = async (imageName) => {
-    if (window.confirm('Are you sure you want to delete this image?')) {
-      try {
-        // Note: Backend API for deletion would be needed for production
-        // For this demo, we'll just remove from state
-        setFaceImages(prev => prev.filter(img => img.name !== imageName));
-        toast.success('Image deleted successfully');
-      } catch (error) {
-        toast.error('Failed to delete image');
-        console.error('Error deleting image:', error);
+  const handleDeleteImage = async () => {
+    if (!imageToDelete) return;
+    
+    try {
+      setDeleteLoading(true);
+      
+      // Call the API to delete the image
+      const result = await cameraService.deleteFaceImage(imageToDelete.id);
+      
+      if (result.success) {
+        // Remove from state
+        setFaceImages(prev => prev.filter(img => img.id !== imageToDelete.id));
+        
+        // Show different messages based on whether all images were deleted
+        if (result.remaining_images === 0) {
+          toast.warning('All face images for this user have been deleted. They will no longer be recognized by the system.');
+        } else {
+          toast.success('Image deleted successfully');
+          
+          // Show model status messages
+          if (result.model_status === "retrained") {
+            toast.info('Face recognition model has been retrained');
+          } else if (result.model_status === "insufficient_users") {
+            toast.warning('Not enough users with face images for effective recognition');
+          } else if (result.model_status === "insufficient_images") {
+            toast.warning('Not enough face images for effective recognition');
+          }
+        }
+      } else {
+        toast.error(result.message || 'Failed to delete image');
       }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to delete image');
+      console.error('Error deleting image:', error);
+    } finally {
+      setDeleteLoading(false);
+      handleCloseDeleteDialog();
     }
   };
   
@@ -162,8 +209,8 @@ const FaceRegistration = () => {
         )}
         
         {faceImages.length === 0 ? (
-          <Alert severity="info" sx={{ mb: 2 }}>
-            No face images registered yet. Use the camera above to capture face images.
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            No face images registered yet. This user will not be recognized by the system. Use the camera above to capture face images.
           </Alert>
         ) : (
           <Grid container spacing={2} sx={{ mt: 1 }}>
@@ -186,7 +233,7 @@ const FaceRegistration = () => {
                       size="small" 
                       color="error" 
                       startIcon={<DeleteIcon />}
-                      onClick={() => handleDeleteImage(image.name)}
+                      onClick={() => handleOpenDeleteDialog(image)}
                     >
                       Delete
                     </Button>
@@ -197,6 +244,44 @@ const FaceRegistration = () => {
           </Grid>
         )}
       </Paper>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={confirmDeleteOpen}
+        onClose={handleCloseDeleteDialog}
+      >
+        <DialogTitle>Delete Face Image</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete this face image? This will also update the face recognition model.
+            
+            {/* Warning for last image */}
+            {faceImages.length === 1 && (
+              <Box sx={{ mt: 2, color: 'error.main', fontWeight: 'bold' }}>
+                Warning: This is the last face image for this user. Deleting it will remove this user from the recognition system completely.
+              </Box>
+            )}
+            
+            {/* Warning for low number of images */}
+            {faceImages.length > 1 && faceImages.length <= 3 && (
+              <Box sx={{ mt: 2, color: 'warning.main' }}>
+                Warning: Having fewer face images may reduce recognition accuracy. It's recommended to have at least 3 images per user.
+              </Box>
+            )}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDeleteDialog}>Cancel</Button>
+          <Button 
+            onClick={handleDeleteImage} 
+            color="error" 
+            disabled={deleteLoading}
+            startIcon={deleteLoading ? <CircularProgress size={24} /> : null}
+          >
+            {deleteLoading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

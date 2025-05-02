@@ -159,7 +159,12 @@ export const cameraService = {
   recognizeFace: async (data) => {
     const response = await api.post('/face-recognition/recognize_face/', data);
     return response.data;
-  }
+  },
+
+  deleteFaceImage: async (imageId) => {
+    const response = await api.post('/face-recognition/delete_face_image/', { image_id: imageId });
+    return response.data;
+  },
 };
 
 export default api;

@@ -116,33 +116,27 @@ class FaceRecognitionModel:
         if not image_paths or len(image_paths) < 2:
             raise ValueError("Not enough images for training. Need at least 2 images.")
         
-        # Initialize label encoder
         if self.label_encoder is None:
             self.label_encoder = LabelEncoder()
         
-        # Encode labels
         encoded_labels = self.label_encoder.fit_transform(labels)
         
-        # Extract faces from images
         faces = []
         valid_labels = []
         
         for i, (image_path, label) in enumerate(zip(image_paths, labels)):
             try:
-                # Load image
                 image = cv2.imread(image_path)
                 if image is None:
                     print(f"Warning: Could not load image {image_path}")
                     continue
                 
-                # Detect faces
                 detected_faces = self.detect_faces(image)
                 
                 if len(detected_faces) == 0:
                     print(f"Warning: No face detected in {image_path}")
                     continue
                     
-                # Use the first detected face (assuming one face per image)
                 face = self.extract_face(image, detected_faces[0])
                 faces.append(face)
                 valid_labels.append(label)
@@ -152,21 +146,17 @@ class FaceRecognitionModel:
         if not faces:
             raise ValueError("No valid faces found in the provided images")
         
-        # Convert lists to arrays
         faces = np.array(faces)
         valid_labels = np.array(valid_labels)
         encoded_valid_labels = self.label_encoder.transform(valid_labels)
         
-        # Convert to categorical
         one_hot_labels = tf.keras.utils.to_categorical(encoded_valid_labels)
         
-        # Split data
         X_train, X_test, y_train, y_test = train_test_split(
             faces, one_hot_labels, 
             test_size=0.2, stratify=one_hot_labels, random_state=42
         )
         
-        # Build or load the model
         if self.model is None:
             print("Building new model...")
             self.model = self._build_model(len(self.label_encoder.classes_))
@@ -174,7 +164,6 @@ class FaceRecognitionModel:
             print("Rebuilding model due to change in number of classes...")
             self.model = self._build_model(len(self.label_encoder.classes_))
         
-        # Callbacks for training
         checkpoint = ModelCheckpoint(
             self.model_path, 
             monitor='val_accuracy', 
@@ -188,7 +177,6 @@ class FaceRecognitionModel:
             restore_best_weights=True
         )
         
-        # Train the model
         history = self.model.fit(
             X_train, y_train,
             validation_data=(X_test, y_test),
@@ -197,14 +185,11 @@ class FaceRecognitionModel:
             callbacks=[checkpoint, early_stopping]
         )
         
-        # Save the label encoder
         with open(self.encoder_path, 'wb') as f:
             pickle.dump(self.label_encoder, f)
         
-        # Clear cache
         self.face_embeddings = {}
         
-        # Return training results
         return {
             'accuracy': float(history.history['accuracy'][-1]),
             'val_accuracy': float(history.history['val_accuracy'][-1]),
@@ -218,48 +203,85 @@ class FaceRecognitionModel:
         if self.model is None or self.label_encoder is None:
             raise ValueError("Model not trained yet. Please train the model first.")
         
-        # Detect faces
         faces = self.detect_faces(image)
         
         if len(faces) == 0:
             return []
         
+        from camera.models import FaceImage
+        from users.models import User
+        
+        valid_user_ids = set()
+        for user in User.objects.all():
+            if FaceImage.objects.filter(user=user).exists():
+                valid_user_ids.add(str(user.id))
+        
         results = []
         
-        # Process each detected face
         for face_location in faces:
-            # Extract and preprocess face
             face = self.extract_face(image, face_location)
             face = np.expand_dims(face, axis=0)  # Add batch dimension
             
-            # Make prediction
             predictions = self.model.predict(face)
             predicted_index = np.argmax(predictions[0])
             confidence = float(predictions[0][predicted_index])
             
-            # Get predicted label
             predicted_label = self.label_encoder.inverse_transform([predicted_index])[0]
             
-            # Add to results
-            x, y, w, h = face_location
-            results.append({
-                'label': predicted_label,
-                'confidence': confidence,
-                'location': (x, y, w, h)
-            })
+            if predicted_label in valid_user_ids:
+                x, y, w, h = face_location
+                results.append({
+                    'label': predicted_label,
+                    'confidence': confidence,
+                    'location': (x, y, w, h)
+                })
         
         return results
     
+
     def recognize_faces_batch(self, image_paths):
         """Recognize faces in multiple images"""
         results = {}
+        
+        from camera.models import FaceImage
+        from users.models import User
+        
+        valid_user_ids = set()
+        for user in User.objects.all():
+            if FaceImage.objects.filter(user=user).exists():
+                valid_user_ids.add(str(user.id))
         
         for image_path in image_paths:
             try:
                 image = cv2.imread(image_path)
                 if image is not None:
-                    face_results = self.recognize_face(image)
-                    results[image_path] = face_results
+                    faces = self.detect_faces(image)
+                    
+                    if len(faces) == 0:
+                        results[image_path] = []
+                        continue
+                    
+                    batch_results = []
+                    
+                    for face_location in faces:
+                        face = self.extract_face(image, face_location)
+                        face = np.expand_dims(face, axis=0)  # Add batch dimension
+                        
+                        predictions = self.model.predict(face)
+                        predicted_index = np.argmax(predictions[0])
+                        confidence = float(predictions[0][predicted_index])
+                        
+                        predicted_label = self.label_encoder.inverse_transform([predicted_index])[0]
+                        
+                        if predicted_label in valid_user_ids:
+                            x, y, w, h = face_location
+                            batch_results.append({
+                                'label': predicted_label,
+                                'confidence': confidence,
+                                'location': (x, y, w, h)
+                            })
+                    
+                    results[image_path] = batch_results
                 else:
                     results[image_path] = []
             except Exception as e:
@@ -273,14 +295,11 @@ class FaceRecognitionModel:
         all_user_images = []
         all_user_labels = []
         
-        # Load existing user images from database
         from camera.models import FaceImage
         from users.models import User
         
-        # Get all users
         users = User.objects.all()
         
-        # Collect images for all users
         for user in users:
             face_images = FaceImage.objects.filter(user=user)
             
@@ -290,13 +309,10 @@ class FaceRecognitionModel:
                     all_user_images.append(img_path)
                     all_user_labels.append(str(user.id))  # Use user ID as label
         
-        # Add new images for the current user
         for img_path in image_paths:
             all_user_images.append(img_path)
             all_user_labels.append(str(user_id))
         
-        # Train model with all images
         return self.train_model(all_user_images, all_user_labels)
 
-# Create a singleton instance
 face_recognition_model = FaceRecognitionModel()

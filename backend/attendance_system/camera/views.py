@@ -157,6 +157,8 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
         except Exception as e:
             return Response({"error": str(e)}, status=400)
     
+    # Update the recognize_face API method in FaceRecognitionViewSet
+
     @action(detail=False, methods=['post'])
     def recognize_face(self, request):
         session_id = request.data.get('session_id')
@@ -217,6 +219,22 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
                     "message": "Invalid image format or empty image"
                 }, status=400)
                 
+            # First check if the user has any face images
+            from camera.models import FaceImage
+            
+            # Get users with face images
+            users_with_faces = set()
+            for user in session.target_users.all():
+                if FaceImage.objects.filter(user=user).exists():
+                    users_with_faces.add(str(user.id))
+            
+            if not users_with_faces:
+                os.remove(temp_file)
+                return Response({
+                    "success": False,
+                    "message": "No users in this session have registered face images"
+                })
+                
             # Use our custom model to recognize faces
             face_results = face_recognition_model.recognize_face(input_image)
             
@@ -238,8 +256,8 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
                 user_id = face_result['label']
                 confidence = face_result['confidence']
                 
-                # Only consider high confidence matches for target users
-                if user_id in target_user_ids and confidence > 0.7:  # Confidence threshold
+                # Only consider high confidence matches for target users with face images
+                if user_id in target_user_ids and user_id in users_with_faces and confidence > 0.7:  # Confidence threshold
                     try:
                         user = User.objects.get(id=int(user_id))
                         
@@ -327,3 +345,96 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
                 "success": False,
                 "message": f"Error training model: {str(e)}"
             }, status=400)
+        
+    @action(detail=False, methods=['post'])
+    def delete_face_image(self, request):
+        """Delete a face image and retrain the model"""
+        image_id = request.data.get('image_id')
+        
+        if not image_id:
+            return Response({"error": "Image ID is required"}, status=400)
+        
+        try:
+            # Get the face image
+            face_image = FaceImage.objects.get(id=image_id)
+            user = face_image.user
+            
+            # Get the actual file path
+            image_path = os.path.join(settings.MEDIA_ROOT, face_image.image_path)
+            
+            # Delete the file if it exists
+            if os.path.exists(image_path):
+                os.remove(image_path)
+            
+            # Delete the database record
+            face_image.delete()
+            
+            # Get remaining images for this user
+            remaining_images = FaceImage.objects.filter(user=user)
+            remaining_count = remaining_images.count()
+            
+            # Check if any users have images left
+            total_face_images = FaceImage.objects.count()
+            
+            # Determine if model needs retraining and what kind of retraining
+            model_status = "unchanged"
+            
+            if total_face_images >= 2:
+                # Collect all remaining face images
+                all_images = []
+                all_labels = []
+                users_with_images = set()
+                
+                for current_user in User.objects.all():
+                    user_face_images = FaceImage.objects.filter(user=current_user)
+                    
+                    # Only include users with at least 1 image
+                    if user_face_images.count() > 0:
+                        users_with_images.add(str(current_user.id))
+                        
+                        for face_img in user_face_images:
+                            img_path = os.path.join(settings.MEDIA_ROOT, face_img.image_path)
+                            if os.path.exists(img_path):
+                                all_images.append(img_path)
+                                all_labels.append(str(current_user.id))
+                
+                if len(all_images) >= 2 and len(users_with_images) >= 2:
+                    # Retrain the model with all remaining images
+                    try:
+                        training_results = face_recognition_model.train_model(all_images, all_labels)
+                        model_status = "retrained"
+                        print(f"Model retrained with {len(all_images)} images for {len(users_with_images)} users")
+                    except Exception as e:
+                        print(f"Warning: Could not retrain face recognition model: {str(e)}")
+                elif len(all_images) >= 2 and len(users_with_images) < 2:
+                    model_status = "insufficient_users"
+                    print("Not enough users with images for meaningful recognition (need at least 2)")
+                else:
+                    model_status = "insufficient_images"
+                    print("Not enough images for training (need at least 2)")
+            else:
+                model_status = "insufficient_images"
+                print("Not enough total images for training (need at least 2)")
+            
+            # Different message based on whether this user still has images
+            if remaining_count == 0:
+                return Response({
+                    "success": True,
+                    "message": "Image deleted successfully. User will no longer be recognized.",
+                    "remaining_images": 0,
+                    "user_recognizable": False,
+                    "model_status": model_status
+                })
+            else:
+                return Response({
+                    "success": True,
+                    "message": "Image deleted successfully",
+                    "remaining_images": remaining_count,
+                    "user_recognizable": True,
+                    "model_status": model_status
+                })
+            
+        except FaceImage.DoesNotExist:
+            return Response({"error": "Face image not found"}, status=404)
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)

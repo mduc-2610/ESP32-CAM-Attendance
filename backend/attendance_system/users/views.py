@@ -2,6 +2,8 @@
 from rest_framework import viewsets, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from camera.models import FaceImage  # Assuming 
+from camera.serializers import FaceImageSerializer  # Assuming 
 from django.shortcuts import get_object_or_404
 from .models import User, UserTag
 from .serializers import UserSerializer, UserTagSerializer
@@ -33,7 +35,8 @@ class UserViewSet(viewsets.ModelViewSet):
         
         # This is just a placeholder - implement based on your FaceImage model
         # Assuming there's a model for face images related to users
-        face_images = []  # FaceImage.objects.filter(user=user)
+        face_images = FaceImage.objects.filter(user=user)
+        face_images = FaceImageSerializer(face_images, many=True, context=self.get_serializer_context()).data
         
         # Mock data for demonstration
         user_data = UserSerializer(user).data
