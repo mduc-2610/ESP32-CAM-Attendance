@@ -12,19 +12,12 @@ import {
   Alert,
   Tabs,
   Tab,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction,
-  IconButton
 } from '@mui/material';
 import { AdapterMoment } from '@mui/x-date-pickers/AdapterMoment';
 import { LocalizationProvider, DatePicker, TimePicker } from '@mui/x-date-pickers';
 import { 
   Save as SaveIcon, 
   ArrowBack as ArrowBackIcon, 
-  PersonAdd as PersonAddIcon,
-  Delete as DeleteIcon,
   Group as GroupIcon,
   Person as PersonIcon
 } from '@mui/icons-material';
@@ -164,6 +157,28 @@ const SessionForm = () => {
     }
   };
   
+  // Select all users for the current tag
+  const handleSelectAllUsers = (usersToSelect) => {
+    // Create a new array with existing selected users
+    const updatedUsers = [...selectedUsers];
+    
+    // Add each user that's not already selected
+    usersToSelect.forEach(user => {
+      if (!updatedUsers.some(u => u.id === user.id)) {
+        updatedUsers.push(user);
+      }
+    });
+    
+    setSelectedUsers(updatedUsers);
+  };
+  
+  // Deselect all users for the current tag
+  const handleDeselectAllUsers = (usersToDeselect) => {
+    // Filter out all users that are in the usersToDeselect array
+    const userIdsToRemove = usersToDeselect.map(u => u.id);
+    setSelectedUsers(selectedUsers.filter(user => !userIdsToRemove.includes(user.id)));
+  };
+  
   // Form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -280,7 +295,7 @@ const SessionForm = () => {
             <Grid item xs={12}>
               <Divider sx={{ my: 2 }} />
               <Typography variant="h6" gutterBottom>
-                Target Users
+                Target Users ({selectedUsers.length})
               </Typography>
               
               <Tabs 
@@ -342,59 +357,13 @@ const SessionForm = () => {
                         selectedUsers={selectedUsers}
                         onUserSelect={handleUserSelect}
                         onUserDeselect={handleRemoveUser}
+                        onSelectAll={handleSelectAllUsers}
+                        onDeselectAll={handleDeselectAllUsers}
                       />
                     </Grid>
                   )}
                 </Grid>
               </TabPanel>
-            </Grid>
-            
-            <Grid item xs={12}>
-              <Divider sx={{ my: 2 }} />
-              <Typography variant="h6" gutterBottom>
-                Selected Users ({selectedUsers.length})
-              </Typography>
-              
-              {selectedUsers.length > 0 ? (
-                <List>
-                  {selectedUsers.map(user => (
-                    <ListItem key={user.id}>
-                      <ListItemText 
-                        primary={user.name} 
-                        secondary={
-                          <Box>
-                            <Typography variant="body2" component="span">
-                              {user.email}
-                            </Typography>
-                            {user.tags && user.tags.length > 0 && (
-                              <Box sx={{ mt: 0.5, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                {user.tags.map(tag => (
-                                  <Chip 
-                                    key={tag.id}
-                                    label={tag.name}
-                                    size="small"
-                                    color={selectedTags.some(t => t.id === tag.id) ? "primary" : "default"}
-                                    variant="outlined"
-                                  />
-                                ))}
-                              </Box>
-                            )}
-                          </Box>
-                        } 
-                      />
-                      <ListItemSecondaryAction>
-                        <IconButton edge="end" onClick={() => handleRemoveUser(user.id)}>
-                          <DeleteIcon />
-                        </IconButton>
-                      </ListItemSecondaryAction>
-                    </ListItem>
-                  ))}
-                </List>
-              ) : (
-                <Alert severity="info">
-                  No users selected. Please add at least one user.
-                </Alert>
-              )}
             </Grid>
             
             <Grid item xs={12}>

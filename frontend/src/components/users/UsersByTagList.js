@@ -23,6 +23,8 @@ const UsersByTagList = ({
   selectedUsers = [], 
   onUserSelect, 
   onUserDeselect,
+  onSelectAll,
+  onDeselectAll,
   selectable = true,
   showActions = true
 }) => {
@@ -64,28 +66,38 @@ const UsersByTagList = ({
   // Handle checkbox click
   const handleCheckboxClick = (user) => {
     if (isUserSelected(user.id)) {
-      onUserDeselect(user);
+      onUserDeselect(user.id);
     } else {
       onUserSelect(user);
     }
   };
   
-  // Select all users
+  // Select all users in the current tag
   const handleSelectAll = () => {
-    users.forEach(user => {
-      if (!isUserSelected(user.id)) {
-        onUserSelect(user);
-      }
-    });
+    if (onSelectAll) {
+      onSelectAll(users);
+    } else {
+      // Fallback if parent doesn't provide onSelectAll
+      users.forEach(user => {
+        if (!isUserSelected(user.id)) {
+          onUserSelect(user);
+        }
+      });
+    }
   };
   
-  // Deselect all users
+  // Deselect all users in the current tag
   const handleDeselectAll = () => {
-    users.forEach(user => {
-      if (isUserSelected(user.id)) {
-        onUserDeselect(user);
-      }
-    });
+    if (onDeselectAll) {
+      onDeselectAll(users);
+    } else {
+      // Fallback if parent doesn't provide onDeselectAll
+      users.forEach(user => {
+        if (isUserSelected(user.id)) {
+          onUserDeselect(user.id);
+        }
+      });
+    }
   };
   
   if (loading) {
@@ -102,6 +114,9 @@ const UsersByTagList = ({
     );
   }
   
+  // Count selected users from current tag
+  const selectedCount = users.filter(user => isUserSelected(user.id)).length;
+  
   return (
     <Box>
       <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -110,6 +125,9 @@ const UsersByTagList = ({
             Users with tag:
           </Typography>
           <Chip label={tag.name} color="primary" />
+          <Typography variant="body2" sx={{ ml: 2 }}>
+            {selectedCount} of {users.length} selected
+          </Typography>
         </Box>
         
         {selectable && showActions && (
@@ -119,6 +137,7 @@ const UsersByTagList = ({
               size="small" 
               onClick={handleSelectAll} 
               sx={{ mr: 1 }}
+              disabled={users.length === 0 || selectedCount === users.length}
             >
               Select All
             </Button>
@@ -126,6 +145,7 @@ const UsersByTagList = ({
               variant="outlined" 
               size="small" 
               onClick={handleDeselectAll}
+              disabled={users.length === 0 || selectedCount === 0}
             >
               Deselect All
             </Button>

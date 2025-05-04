@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from .models import CameraConfiguration, FaceImage
 from .serializers import CameraConfigurationSerializer, FaceImageSerializer
 from users.models import User
+from urllib.parse import urljoin
 
 import os
 import uuid
@@ -27,7 +28,15 @@ class CameraConfigurationViewSet(viewsets.ModelViewSet):
         if not ip_address:
             return Response({"error": "IP address is required"}, status=400)
         
-        # Try to connect to ESP32-CAM
+        # Try to stop any existing stream first
+        try:
+            # Use a short timeout since this is just a cleanup step
+            requests.get(f"http://{ip_address}/stopstream", timeout=2)
+        except:
+            # It's okay if this fails, we'll continue with the test
+            pass
+        
+        # Try to connect to ESP32-CAM using the capture endpoint
         try:
             response = requests.get(f"http://{ip_address}/capture", timeout=5)
             
@@ -57,7 +66,36 @@ class CameraConfigurationViewSet(viewsets.ModelViewSet):
                 "success": False,
                 "message": f"Connection failed: {str(e)}"
             }, status=400)
-
+    
+    @action(detail=False, methods=['post'])
+    def stop_stream(self, request):
+        ip_address = request.data.get('ip_address')
+        
+        if not ip_address:
+            return Response({"error": "IP address is required"}, status=400)
+        
+        try:
+            # Call the ESP32's stopstream endpoint
+            response = requests.get(f"http://{ip_address}/stopstream", timeout=3)
+            
+            if response.status_code == 200:
+                return Response({
+                    "success": True,
+                    "message": "Stream stopped successfully"
+                })
+            else:
+                return Response({
+                    "success": False,
+                    "message": f"Failed to stop stream: HTTP {response.status_code}"
+                }, status=400)
+        except requests.exceptions.RequestException as e:
+            return Response({
+                "success": False,
+                "message": f"Failed to stop stream: {str(e)}"
+            }, status=400)
+        
+    
+        
 class FaceRecognitionViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['post'])
     def register_face(self, request):
@@ -88,7 +126,10 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
                 
             elif camera_mode == 'ESP32' and esp32_ip:
                 try:
-                    response = requests.get(f"http://{esp32_ip}/capture", timeout=5)
+                    # Add a timestamp parameter to avoid caching issues
+                    import time
+                    timestamp_ms = int(time.time() * 1000)
+                    response = requests.get(f"http://{esp32_ip}/capture?t={timestamp_ms}", timeout=5)
                     if response.status_code == 200:
                         with open(file_path, 'wb') as f:
                             f.write(response.content)
@@ -115,15 +156,65 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
                     "success": False,
                     "message": "Invalid image format or empty image"
                 }, status=400)
-                
-            faces = face_recognition_model.detect_faces(image)
+                    
+            # Preprocess the image to improve face detection
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            gray = cv2.equalizeHist(gray)  # Improve contrast
             
+            # Try to detect faces with optimal parameters
+            face_detector = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+            faces = face_detector.detectMultiScale(
+                gray,
+                scaleFactor=1.05,
+                minNeighbors=3,
+                minSize=(30, 30),
+                flags=cv2.CASCADE_SCALE_IMAGE
+            )
+            
+            # If no faces found, try with more lenient parameters
+            if len(faces) == 0:
+                faces = face_detector.detectMultiScale(
+                    gray,
+                    scaleFactor=1.03,
+                    minNeighbors=2,
+                    minSize=(20, 20),
+                    flags=cv2.CASCADE_SCALE_IMAGE
+                )
+                
             if len(faces) == 0:
                 os.remove(file_path) 
                 return Response({
                     "success": False,
                     "message": "No face detected in the image"
                 }, status=400)
+            
+            # Check if this face is already registered by another user
+            # Only do this check if the model is already trained
+            if face_recognition_model.model is not None:
+                recognition_results = face_recognition_model.recognize_face(image)
+                
+                if recognition_results:
+                    for result in recognition_results:
+                        recognized_user_id = result['label']
+                        confidence = result['confidence']
+                        
+                        # If high confidence match with a different user
+                        if recognized_user_id != str(user.id) and confidence > 0.8:
+                            try:
+                                other_user = User.objects.get(id=recognized_user_id)
+                                os.remove(file_path)
+                                return Response({
+                                    "success": False,
+                                    "message": "Face appears to be already registered",
+                                    "detected_user": {
+                                        "id": other_user.id,
+                                        "name": other_user.name
+                                    },
+                                    "confidence": confidence
+                                }, status=400)
+                            except User.DoesNotExist:
+                                # This should not happen, but just in case
+                                pass
             
             # Create face image record
             relative_path = os.path.join(str(user.id), filename)
@@ -140,13 +231,17 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
                 print(f"Warning: Could not update face recognition model: {str(e)}")
                 # Continue even if model update fails
             
+            # Prepare the response
+            image_url = urljoin(f"{request.scheme}://{request.get_host()}", os.path.join(settings.MEDIA_URL, relative_path))
+            
             return Response({
                 "success": True,
                 "message": "Face registered successfully",
                 "face_image": {
                     "id": face_image.id,
                     "path": relative_path,
-                    "url": f"{settings.MEDIA_URL}{relative_path}"
+                    "image_path": image_url,
+                    "url": image_url
                 }
             })
             
@@ -154,8 +249,6 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
             return Response({"error": "User not found"}, status=404)
         except Exception as e:
             return Response({"error": str(e)}, status=400)
-    
-    # Update the recognize_face API method in FaceRecognitionViewSet
 
     @action(detail=False, methods=['post'])
     def recognize_face(self, request):
@@ -208,7 +301,6 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
                     "message": "Invalid data: image_data required for WEBCAM mode, esp32_ip required for ESP32 mode"
                 }, status=400)
             
-            # Load the input image
             input_image = cv2.imread(temp_file)
             if input_image is None:
                 os.remove(temp_file)
@@ -216,11 +308,41 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
                     "success": False,
                     "message": "Invalid image format or empty image"
                 }, status=400)
-                
-            # First check if the user has any face images
+            
+            # Preprocess the image to improve face detection
+            gray = cv2.cvtColor(input_image, cv2.COLOR_BGR2GRAY)
+            gray = cv2.equalizeHist(gray)  # Improve contrast
+            
+            # Try to detect faces with multiple parameter sets
+            face_detector = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+            faces = face_detector.detectMultiScale(
+                gray,
+                scaleFactor=1.05,
+                minNeighbors=3,
+                minSize=(30, 30),
+                flags=cv2.CASCADE_SCALE_IMAGE
+            )
+            
+            # If no faces found, try with more lenient parameters
+            if len(faces) == 0:
+                faces = face_detector.detectMultiScale(
+                    gray,
+                    scaleFactor=1.03,
+                    minNeighbors=2,
+                    minSize=(20, 20),
+                    flags=cv2.CASCADE_SCALE_IMAGE
+                )
+            
+            if len(faces) == 0:
+                os.remove(temp_file)
+                return Response({
+                    "success": False,
+                    "message": "No face detected in the input image",
+                    "suggestion": "Please ensure the face is clearly visible, well-lit, and facing the camera"
+                }, status=400)
+                    
             from camera.models import FaceImage
             
-            # Get users with face images
             users_with_faces = set()
             for user in session.target_users.all():
                 if FaceImage.objects.filter(user=user).exists():
@@ -233,15 +355,30 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
                     "message": "No users in this session have registered face images"
                 })
                 
-            # Use our custom model to recognize faces
-            face_results = face_recognition_model.recognize_face(input_image)
+            # Process each face detected
+            results = []
             
-            if not face_results:
-                os.remove(temp_file)
-                return Response({
-                    "success": False,
-                    "message": "No face detected in the input image"
-                }, status=400)
+            for (x, y, w, h) in faces:
+                # Extract and preprocess the face region
+                face_roi = input_image[y:y+h, x:x+w]
+                face_roi = cv2.resize(face_roi, (224, 224))
+                face_roi = cv2.cvtColor(face_roi, cv2.COLOR_BGR2RGB)
+                
+                # Convert to format expected by face recognition model
+                face = np.expand_dims(face_roi, axis=0)
+                
+                # Use model to predict
+                if face_recognition_model.model is not None:
+                    try:
+                        # Use our existing model's recognize_face method
+                        face_result = face_recognition_model.recognize_face(input_image)
+                        if face_result:
+                            results.extend(face_result)
+                    except Exception as e:
+                        print(f"Error in face recognition: {str(e)}")
+            
+            # Clean up temp file
+            os.remove(temp_file)
             
             # Get all users in this session
             target_users = session.target_users.all()
@@ -250,7 +387,7 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
             matches = []
             
             # Process recognition results
-            for face_result in face_results:
+            for face_result in results:
                 user_id = face_result['label']
                 print(f"Recognized user ID: {user_id}")
                 confidence = face_result['confidence']
@@ -277,9 +414,6 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
                     except User.DoesNotExist:
                         print(f"Warning: User with ID {user_id} not found")
             
-            # Clean up temp file
-            os.remove(temp_file)
-            
             if matches:
                 return Response({
                     "success": True,
@@ -289,13 +423,15 @@ class FaceRecognitionViewSet(viewsets.ViewSet):
             else:
                 return Response({
                     "success": False,
-                    "message": "No matching faces found in the system"
+                    "message": "No matching faces found in the system",
+                    "suggestion": "Please ensure you are registered in the system and try again with better lighting"
                 })
             
         except AttendanceSession.DoesNotExist:
             return Response({"error": "Session not found"}, status=404)
         except Exception as e:
             return Response({"error": str(e)}, status=400)
+        
 
     @action(detail=False, methods=['post'])
     def train_model(self, request):

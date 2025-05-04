@@ -7,41 +7,50 @@ const ESP32Capture = ({ onCapture }) => {
   const { 
     cameraMode, 
     esp32IpAddress, 
+    setEsp32IpAddress,
     esp32Status,
-    captureImage 
+    setEsp32Status,
+    streamUrl,
+    setStreamUrl,
+    captureImage,
   } = useCamera();
   
-  const [streamUrl, setStreamUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [streamError, setStreamError] = useState(false);
   const [streamKey, setStreamKey] = useState(0);
   
-  // Set stream URL when ESP32 is connected
+  const stopStream = useCallback(() => {
+    setStreamUrl('');
+    setStreamKey(prev => prev + 1);
+    console.log("Stream stopped by setting empty URL");
+    
+    return new Promise(resolve => setTimeout(resolve, 300));
+  }, []);
+  
   useEffect(() => {
+    const timestamp = new Date().getTime();
+
     if (cameraMode === 'ESP32' && esp32Status === 'connected' && esp32IpAddress) {
-      const timestamp = new Date().getTime();
       setStreamUrl(`http://${esp32IpAddress}/stream?t=${timestamp}`);
       setStreamError(false);
+    } else {
+      setStreamUrl('');
     }
   
     return () => {
-      if (streamUrl) {
-        setStreamUrl('');
-        
-        if (esp32IpAddress) {
-          fetch(`http://${esp32IpAddress}/stopstream`)
-            .catch(err => console.log('Error stopping stream:', err));
-        }
-      }
+      setStreamUrl('');
+      setStreamKey(prev => prev + 1);
+      
+      console.log("Component cleanup: stream URL cleared");
     };
   }, [cameraMode, esp32Status, esp32IpAddress]);
   
   const handleCapture = useCallback(async () => {
     try {
       setIsLoading(true);
-      const currentUrl = streamUrl;
-      setStreamUrl('');
-      setStreamKey(prev => prev + 1); // Force remount
+      
+      // Stop the stream before capture
+      await stopStream();
   
       if (cameraMode === 'ESP32' && esp32Status === 'connected') {
         const ipAddress = await captureImage();
@@ -50,21 +59,32 @@ const ESP32Capture = ({ onCapture }) => {
         }
       }
   
-      // Restore the stream with a new timestamp to refresh it
-      const timestamp = new Date().getTime();
-      setStreamUrl(`http://${esp32IpAddress}/stream?t=${timestamp}`);
+      // Wait a moment before restarting the stream
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Only restart the stream if we're still in ESP32 mode and connected
+      if (cameraMode === 'ESP32' && esp32Status === 'connected') {
+        const timestamp = new Date().getTime();
+        setStreamUrl(`http://${esp32IpAddress}/stream?t=${timestamp}`);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [cameraMode, esp32Status, captureImage, onCapture, esp32IpAddress, streamUrl]);
+  }, [cameraMode, esp32Status, captureImage, onCapture, esp32IpAddress, stopStream]);
   
   const handleStreamError = () => {
     setStreamError(true);
   };
   
-  const handleRefreshStream = () => {
-    setStreamError(false);
+  const handleRefreshStream = async () => {
+    // Stop the stream first
+    await stopStream();
     
+    // Wait a moment before restarting
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Reset error state and restart stream
+    setStreamError(false);
     const timestamp = new Date().getTime();
     setStreamUrl(`http://${esp32IpAddress}/stream?t=${timestamp}`);
   };
@@ -110,12 +130,29 @@ const ESP32Capture = ({ onCapture }) => {
               </Box>
             ) : (
               <>
-                <img 
-                  src={streamUrl} 
-                  alt="ESP32-CAM Stream" 
-                  style={{ width: '100%', height: '100%' }}
-                  onError={handleStreamError}
-                />
+                {streamUrl ? (
+                  <img 
+                    key={streamKey}
+                    src={streamUrl} 
+                    alt="ESP32-CAM Stream" 
+                    style={{ maxWidth: '100%', maxHeight: '100%' }}
+                    onError={handleStreamError}
+                  />
+                ) : (
+                  <Box sx={{ 
+                    display: 'flex', 
+                    justifyContent: 'center', 
+                    alignItems: 'center',
+                    height: '100%',
+                    width: '100%',
+                    bgcolor: '#f5f5f5'
+                  }}>
+                    <Typography variant="body2" color="textSecondary">
+                      Stream inactive
+                    </Typography>
+                  </Box>
+                )}
+                
                 {isLoading && (
                   <Box 
                     sx={{ 
@@ -152,16 +189,12 @@ const ESP32Capture = ({ onCapture }) => {
         <Box sx={{ 
             width: 640,
             height: 480,
-            textAlign: 'center', 
-            p: 3,
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            textAlign: 'center',
+            p: 3,
           }}>
-          <Alert severity="info" sx={{ 
-            
-          }}>
+          <Alert severity="info">
             Please connect to an ESP32-CAM device to view the stream
           </Alert>
         </Box>

@@ -151,6 +151,11 @@ export const cameraService = {
     return response.data;
   },
   
+  stopStream: async (data) => {
+    const response = await api.post('/camera/configs/stop_stream/', data);
+    return response.data;
+  },
+  
   registerFace: async (data) => {
     const response = await api.post('/face-recognition/register_face/', data);
     return response.data;

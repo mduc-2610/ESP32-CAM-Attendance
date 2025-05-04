@@ -73,7 +73,15 @@ function TabPanel(props) {
 const FaceRecognition = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { cameraMode, captureImage } = useCamera();
+  const { 
+    cameraMode, 
+    captureImage, 
+    setEsp32IpAddress,
+    streamUrl, 
+    setStreamUrl,
+    disconnectEsp32,
+    setCameraMode
+  } = useCamera();
   const { 
     currentSession, 
     setCurrentSession,
@@ -82,7 +90,7 @@ const FaceRecognition = () => {
     recognitionActive,
     setRecognitionActive,
     loadSession,
-    finishSession
+    finishSession,
   } = useAttendance();
   
   const [loading, setLoading] = useState(false);
@@ -90,17 +98,14 @@ const FaceRecognition = () => {
   const [confirmFinishOpen, setConfirmFinishOpen] = useState(false);
   const [tabValue, setTabValue] = useState(0);
   
-  // New state for tracking users by tags
   const [usersByTag, setUsersByTag] = useState({});
   const [remainingUsers, setRemainingUsers] = useState([]);
   const [expandedTag, setExpandedTag] = useState(null);
   
-  // Recognition interval
   const [autoRecognition, setAutoRecognition] = useState(false);
   const [recognitionInterval, setRecognitionInterval] = useState(null);
   const [countdown, setCountdown] = useState(5);
   
-  // Handle tab change
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
   };
@@ -110,6 +115,7 @@ const FaceRecognition = () => {
     const fetchSessionData = async () => {
       try {
         setLoading(true);
+
         const session = await loadSession(id);
         
         if (session) {
@@ -240,6 +246,7 @@ const FaceRecognition = () => {
       
       const result = await cameraService.recognizeFace(recognitionData);
       
+      var cnt = 0;
       if (result.success) {
         if (result.matches && result.matches.length > 0) {
           // Process recognized faces
@@ -261,8 +268,12 @@ const FaceRecognition = () => {
                   }
                 ]);
                 
-                toast.success(`Recognized: ${match.name}`);
               }
+              if(cnt == 0) {
+                toast.success(`Recognized: ${match.name}`);
+                
+              }
+              cnt++;
             }
           });
         } else {
@@ -424,7 +435,7 @@ const FaceRecognition = () => {
             Face Recognition: {currentSession.name}
           </Typography>
           
-          <Button
+          {/* <Button
             variant="contained"
             color="secondary"
             startIcon={autoRecognition ? <StopIcon /> : <CameraIcon />}
@@ -436,7 +447,7 @@ const FaceRecognition = () => {
             ) : (
               'Start Auto Recognition'
             )}
-          </Button>
+          </Button> */}
           
           <Button
             variant="contained"
@@ -487,7 +498,7 @@ const FaceRecognition = () => {
             
             {cameraMode === 'ESP32' && <ESP32Capture onCapture={performRecognition} />}
             
-            {!autoRecognition && (
+            {/* {!autoRecognition && (
               <Box sx={{ textAlign: 'center', mt: 3 }}>
                 <Button
                   variant="contained"
@@ -501,7 +512,7 @@ const FaceRecognition = () => {
                   {processingImage ? 'Processing...' : 'Capture & Recognize'}
                 </Button>
               </Box>
-            )}
+            )} */}
           </Paper>
         </Grid>
         

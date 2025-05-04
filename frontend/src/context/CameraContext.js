@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useCallback } from 'react';
+import React, { createContext, useState, useContext, useCallback, useRef } from 'react';
 import { cameraService } from '../services/api';
 import { toast } from 'react-toastify';
 
@@ -9,17 +9,48 @@ export const CameraProvider = ({ children }) => {
   const [esp32IpAddress, setEsp32IpAddress] = useState('');
   const [esp32Status, setEsp32Status] = useState('disconnected'); // 'disconnected', 'connecting', 'connected'
   const [webcamRef, setWebcamRef] = useState(null);
-  const [stream, setStream] = useState(null);
+  const [streamUrl, setStreamUrl] = useState('');
+
+  // Use a ref to track active connection requests
+  const activeConnectionRef = useRef(null);
   
-  // Test connection to ESP32-CAM
+  // Disconnect from ESP32 by just resetting state
+  const disconnectEsp32 = useCallback(() => {
+    setEsp32Status('disconnected');
+    setEsp32IpAddress('');
+    setStreamUrl('');
+    
+    // Clear any active connection
+    if (activeConnectionRef.current) {
+      activeConnectionRef.current.abort();
+      activeConnectionRef.current = null;
+    }
+    
+    // Give the browser time to clean up connections
+    return new Promise(resolve => setTimeout(resolve, 500));
+  }, []);
+  
   const testEsp32Connection = useCallback(async (ipAddress) => {
+    await disconnectEsp32();
+    const controller = new AbortController();
+    
     try {
       setEsp32Status('connecting');
-      const response = await cameraService.testConnection({ ip_address: ipAddress });
       
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      activeConnectionRef.current = controller;
+      
+      const response = await cameraService.testConnection(
+        { ip_address: ipAddress },
+        { signal: controller.signal }
+      );
+      
+      clearTimeout(timeoutId);
       if (response.success) {
         setEsp32Status('connected');
         setEsp32IpAddress(ipAddress);
+
         toast.success('ESP32-CAM connected successfully');
         return true;
       } else {
@@ -29,10 +60,21 @@ export const CameraProvider = ({ children }) => {
       }
     } catch (error) {
       setEsp32Status('disconnected');
-      toast.error(error.response?.data?.message || 'Connection failed');
+      
+      if (error.name === 'AbortError') {
+        toast.error('Connection timed out');
+      } else {
+        toast.error(error.response?.data?.message || 'Connection failed');
+      }
+      
       return false;
+    } finally {
+      // If this connection is still the active one, clear it
+      if (activeConnectionRef.current === controller) {
+        activeConnectionRef.current = null;
+      }
     }
-  }, []);
+  }, [disconnectEsp32]);
   
   // Capture image from camera (webcam or ESP32)
   const captureImage = useCallback(async () => {
@@ -64,9 +106,10 @@ export const CameraProvider = ({ children }) => {
   // Initialize camera
   const initializeCamera = useCallback(async (mode, ipAddress = null) => {
     try {
+      // First disconnect from any existing connection
+      
       if (mode === 'WEBCAM') {
         setCameraMode('WEBCAM');
-        setEsp32Status('disconnected');
       } else if (mode === 'ESP32' && ipAddress) {
         const connected = await testEsp32Connection(ipAddress);
         if (connected) {
@@ -77,7 +120,22 @@ export const CameraProvider = ({ children }) => {
       toast.error('Error initializing camera');
       console.error('Camera init error:', error);
     }
-  }, [testEsp32Connection]);
+  }, [testEsp32Connection, disconnectEsp32]);
+  
+  // Effect to clean up connections when the provider is unmounted
+  React.useEffect(() => {
+    return () => {
+      // Clean up any active connections
+      if (activeConnectionRef.current) {
+        activeConnectionRef.current.abort();
+        activeConnectionRef.current = null;
+      }
+      
+      // Just reset state - no need to call any stopstream endpoint
+      setEsp32Status('disconnected');
+      setEsp32IpAddress('');
+    };
+  }, []);
   
   const value = {
     cameraMode,
@@ -88,11 +146,12 @@ export const CameraProvider = ({ children }) => {
     setEsp32Status,
     webcamRef,
     setWebcamRef,
-    stream,
-    setStream,
     testEsp32Connection,
     captureImage,
     initializeCamera,
+    disconnectEsp32,
+    streamUrl,
+    setStreamUrl,
   };
   
   return (

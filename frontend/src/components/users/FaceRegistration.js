@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { 
   Box, 
@@ -17,12 +17,17 @@ import {
   DialogTitle,
   DialogContent,
   DialogContentText,
-  DialogActions
+  DialogActions,
+  Snackbar,
+  IconButton
 } from '@mui/material';
 import { 
   ArrowBack as ArrowBackIcon,
   PhotoCamera as PhotoCameraIcon,
-  DeleteForever as DeleteIcon
+  DeleteForever as DeleteIcon,
+  Warning as WarningIcon,
+  Refresh as RefreshIcon,
+  ZoomIn as ZoomInIcon
 } from '@mui/icons-material';
 import { userService, cameraService } from '../../services/api';
 import { toast } from 'react-toastify';
@@ -44,6 +49,17 @@ const FaceRegistration = () => {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [imageToDelete, setImageToDelete] = useState(null);
   
+  // New state for duplicate face dialog
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
+  const [duplicateUserInfo, setDuplicateUserInfo] = useState(null);
+  
+  // New state for face detection error guidance
+  const [detectionErrorOpen, setDetectionErrorOpen] = useState(false);
+  const [lastCaptureAttempt, setLastCaptureAttempt] = useState(null);
+  
+  // Add this ref to track if we need to refresh face images
+  const shouldRefreshImages = useRef(false);
+  
   // Load user data and face images
   useEffect(() => {
     const fetchUserData = async () => {
@@ -52,6 +68,8 @@ const FaceRegistration = () => {
         const data = await userService.getUserFaceImages(id);
         setUser(data.user);
         setFaceImages(data.images || []);
+        // Reset the refresh flag
+        shouldRefreshImages.current = false;
       } catch (error) {
         toast.error('Failed to load user data');
         console.error('Error loading user:', error);
@@ -61,13 +79,17 @@ const FaceRegistration = () => {
       }
     };
     
-    fetchUserData();
-  }, [id, navigate]);
+    // Initial load or when refresh is needed
+    if (!user || shouldRefreshImages.current) {
+      fetchUserData();
+    }
+  }, [id, navigate, shouldRefreshImages.current]);
   
   // Handle image capture from camera
   const handleCapture = async (imageSrc) => {
     try {
       setCaptureLoading(true);
+      setLastCaptureAttempt(imageSrc);
       
       const data = {
         user_id: id,
@@ -85,17 +107,27 @@ const FaceRegistration = () => {
       if (result.success) {
         toast.success('Face registered successfully');
         
-        // Add new image to the list
-        setFaceImages(prev => [...prev, {
-          id: result.face_image.id,
-          name: result.face_image.path.split('/').pop(),
-          url: result.face_image.url
-        }]);
+        // Set the flag to refresh the images from the server
+        shouldRefreshImages.current = true;
+        
+        // Trigger a refresh of face images
+        const data = await userService.getUserFaceImages(id);
+        setFaceImages(data.images || []);
+        shouldRefreshImages.current = false;
       } else {
         toast.error(result.message || 'Failed to register face');
       }
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to register face');
+      if (error.response?.data?.message === "No face detected in the image") {
+        // Show guidance dialog for face detection issues
+        setDetectionErrorOpen(true);
+      } else if (error.response?.data?.detected_user) {
+        // Handle duplicate face detection
+        setDuplicateUserInfo(error.response.data);
+        setDuplicateDialogOpen(true);
+      } else {
+        toast.error(error.response?.data?.message || 'Failed to register face');
+      }
       console.error('Error registering face:', error);
     } finally {
       setCaptureLoading(false);
@@ -112,6 +144,25 @@ const FaceRegistration = () => {
   const handleCloseDeleteDialog = () => {
     setConfirmDeleteOpen(false);
     setImageToDelete(null);
+  };
+  
+  // Close duplicate face dialog
+  const handleCloseDuplicateDialog = () => {
+    setDuplicateDialogOpen(false);
+    setDuplicateUserInfo(null);
+  };
+  
+  // Close face detection error dialog
+  const handleCloseDetectionErrorDialog = () => {
+    setDetectionErrorOpen(false);
+  };
+  
+  // Navigate to the duplicate user's page
+  const handleViewDuplicateUser = () => {
+    if (duplicateUserInfo?.detected_user?.id) {
+      navigate(`/users/${duplicateUserInfo.detected_user.id}/edit`);
+    }
+    handleCloseDuplicateDialog();
   };
   
   // Handle image deletion
@@ -215,17 +266,17 @@ const FaceRegistration = () => {
         ) : (
           <Grid container spacing={2} sx={{ mt: 1 }}>
             {faceImages.map((image, index) => (
-              <Grid item xs={12} sm={6} md={4} lg={3} key={index}>
+              <Grid item xs={12} sm={6} md={4} lg={3} key={image.id || index}>
                 <Card>
                   <CardMedia
                     component="img"
-                    image={image.url}
+                    image={image.image_path}
                     alt={`Face ${index + 1}`}
                     sx={{ height: 200, objectFit: 'cover' }}
                   />
                   <CardContent sx={{ py: 1 }}>
                     <Typography variant="body2" color="text.secondary">
-                      {image.name}
+                      {image.image_path.split('/').pop()}
                     </Typography>
                   </CardContent>
                   <CardActions>
@@ -280,6 +331,82 @@ const FaceRegistration = () => {
           >
             {deleteLoading ? 'Deleting...' : 'Delete'}
           </Button>
+        </DialogActions>
+      </Dialog>
+      
+      {/* Duplicate Face Dialog */}
+      <Dialog
+        open={duplicateDialogOpen}
+        onClose={handleCloseDuplicateDialog}
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center' }}>
+          <WarningIcon color="warning" sx={{ mr: 1 }} />
+          Face Already Registered
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            The face you're trying to register appears to be already registered by another user:
+            <Box sx={{ mt: 2, fontWeight: 'bold' }}>
+              {duplicateUserInfo?.detected_user?.name}
+            </Box>
+            <Box sx={{ mt: 1 }}>
+              Confidence: {duplicateUserInfo?.confidence ? 
+                `${(duplicateUserInfo.confidence * 100).toFixed(2)}%` : 
+                'Unknown'}
+            </Box>
+            <Box sx={{ mt: 2 }}>
+              To prevent conflicts in the face recognition system, you should:
+              <ul>
+                <li>Verify if this is the correct user for this face</li>
+                <li>If needed, delete the face from the other user first</li>
+                <li>Try again with a different facial pose or lighting</li>
+              </ul>
+            </Box>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDuplicateDialog}>Close</Button>
+          <Button 
+            onClick={handleViewDuplicateUser} 
+            color="primary" 
+            variant="contained"
+          >
+            View User
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      {/* Face Detection Error Dialog */}
+      <Dialog
+        open={detectionErrorOpen}
+        onClose={handleCloseDetectionErrorDialog}
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center' }}>
+          <WarningIcon color="info" sx={{ mr: 1 }} />
+          No Face Detected
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            No face was detected in the captured image. This could be due to:
+            <ul>
+              <li>Poor lighting conditions</li>
+              <li>Face not fully visible or too far from camera</li>
+              <li>Face angle not optimal (try facing the camera directly)</li>
+              <li>Image quality or focus issues</li>
+            </ul>
+            
+            Please try again with these suggestions:
+            <ul>
+              <li>Ensure good, even lighting on your face</li>
+              <li>Position your face in the center of the frame</li>
+              <li>Keep a neutral expression and face the camera directly</li>
+              <li>Maintain a proper distance from the camera (not too close or too far)</li>
+              <li>If using ESP32-CAM, ensure it's stable and properly focused</li>
+            </ul>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDetectionErrorDialog}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

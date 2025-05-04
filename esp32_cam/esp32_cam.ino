@@ -9,8 +9,11 @@
 #include "esp_http_server.h"
 
 // Replace with your Wi-Fi credentials
-const char *ssid = "VAN SAU";
-const char *password = "0945248236";
+// const char *ssid = "VAN SAU";
+// const char *password = "0945248236";
+
+const char *ssid = "Minh Duc";
+const char *password = "26102003";
 
 #define PART_BOUNDARY "123456789000000000000987654321"
 
@@ -296,14 +299,13 @@ static esp_err_t stop_stream_handler(httpd_req_t *req) {
   httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, OPTIONS");
   httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
   
-  httpd_resp_send(req, "Stream stopped", HTTPD_RESP_USE_STRLEN);
-  
   sensor_t *s = esp_camera_sensor_get();
   if (s) {
     configure_camera_for_quality(s, true);
   }
   
   httpd_resp_send(req, "Stream stopped", HTTPD_RESP_USE_STRLEN);
+  
   return ESP_OK;
 }
 
@@ -386,6 +388,7 @@ void startCameraServer() {
     httpd_register_uri_handler(stream_httpd, &capture_uri);
     httpd_register_uri_handler(stream_httpd, &stream_options_uri);
     httpd_register_uri_handler(stream_httpd, &options_uri);
+    httpd_register_uri_handler(stream_httpd, &stop_stream_uri);
     Serial.println("HTTP server started successfully");
   } else {
     Serial.println("Failed to start HTTP server");

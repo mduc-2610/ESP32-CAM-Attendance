@@ -79,21 +79,33 @@ class FaceRecognitionModel:
         return model
     
     def detect_faces(self, image):
-        """Detect faces in an image using Haar Cascade"""
         if image is None:
             return []
             
         # Convert to grayscale for face detection
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         
-        # Detect faces
+        # Apply histogram equalization to improve contrast
+        gray = cv2.equalizeHist(gray)
+        
+        # Try with different parameters to improve detection reliability
         faces = self.face_detector.detectMultiScale(
             gray,
-            scaleFactor=1.1,
-            minNeighbors=5,
+            scaleFactor=1.05,  # More fine-grained scaling (was 1.1)
+            minNeighbors=3,    # Reduce strictness (was 5)
             minSize=(30, 30),
             flags=cv2.CASCADE_SCALE_IMAGE
         )
+        
+        # If no faces found with initial parameters, try with more lenient settings
+        if len(faces) == 0:
+            faces = self.face_detector.detectMultiScale(
+                gray,
+                scaleFactor=1.03,  # Even more fine-grained scaling
+                minNeighbors=2,    # Even less strict
+                minSize=(20, 20),  # Smaller minimum face size
+                flags=cv2.CASCADE_SCALE_IMAGE
+            )
         
         return faces
     
